@@ -14,6 +14,19 @@
     const results = page.querySelector("#requestsResults");
     const requestedKeys = new Set();
 
+    function apiUrl(url) {
+        const apiClient = window.ApiClient;
+        let serverAddress = "";
+
+        if (apiClient && typeof apiClient.serverAddress === "function") {
+            serverAddress = apiClient.serverAddress() || "";
+        }
+
+        return serverAddress
+            ? `${serverAddress.replace(/\/+$/, "")}${url}`
+            : url;
+    }
+
     function apiHeaders() {
         const apiClient = window.ApiClient;
         const token = apiClient && typeof apiClient.accessToken === "function"
@@ -24,7 +37,7 @@
     }
 
     async function apiRequest(url, options) {
-        const response = await fetch(url, {
+        const response = await fetch(apiUrl(url), {
             ...options,
             headers: {
                 ...apiHeaders(),
@@ -43,7 +56,7 @@
             } catch (_) {
                 // Keep the friendly fallback for non-JSON responses.
             }
-            throw new Error(message);
+            throw new Error(`${message} (${response.status} ${response.statusText})`);
         }
 
         return response.status === 204 ? null : response.json();

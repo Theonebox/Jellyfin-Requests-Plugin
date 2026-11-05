@@ -16,6 +16,7 @@ public sealed class TmdbService
     {
         _httpClient = httpClient ?? new HttpClient();
         _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        _httpClient.Timeout = TimeSpan.FromSeconds(30);
     }
 
     public async Task<IEnumerable<TmdbSearchResult>> SearchMoviesAsync(string query)
