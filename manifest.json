@@ -1,44 +1,50 @@
-[
-  {
-    "guid": "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
-    "name": "Requests",
-    "description": "Allows users to submit media requests.",
-    "overview": "A Jellyfin plugin for requesting movies and TV shows.",
-    "owner": "Theonebox",
-    "category": "General",
-    "versions": [
-      {
-        "version": "1.0.0.3",
-        "changelog": "TMDb search and UI fixes, including API error details and Jellyfin base URL support",
-        "targetAbi": "12.4.0.0",
-        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.3/Requests_1.0.0.3.zip",
-        "checksum": "67818F1DFB90A670C023613D74B2E1EC",
-        "timestamp": "2026-11-05T05:09:12Z"
-      },
-      {
-        "version": "1.0.0.2",
-        "changelog": "TMDB integration and UI testing",
-        "targetAbi": "12.4.0.0",
-        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.2/Requests_1.0.0.2.zip",
-        "checksum": "92F5F39F0A457862B4F312068C8B4A30",
-        "timestamp": "2026-11-05T04:37:28Z"
-      },
-      {
-        "version": "1.0.0.1",
-        "changelog": "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
-        "targetAbi": "12.4.0.0",
-        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.1/Requests_1.0.0.1.zip",
-        "checksum": "9CD239CE819501B5FDEF40CA8AEC6374",
-        "timestamp": "2026-11-05T03:35:13Z"
-      },
-      {
-        "version": "1.0.0.0",
-        "changelog": "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
-        "targetAbi": "12.4.0.0",
-        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0/Requests_1.0.0.zip",
-        "checksum": "FA88ECDDDDB86D0FB16C256D13E3F2D67C642875ECF2EB3A00C1E5D6B073C20E",
-        "timestamp": "2026-11-04T21:00:00Z"
-      }
-    ]
-  }
-]
+[{
+    "guid":  "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
+    "name":  "Requests",
+    "description":  "Allows users to submit media requests.",
+    "overview":  "A Jellyfin plugin for requesting movies and TV shows.",
+    "owner":  "Theonebox",
+    "category":  "General",
+    "versions":  [
+                     {
+                         "version":  "1.0.0.3.5",
+                         "changelog":  "Added support for TMDb v3 API keys and v4 read-access bearer tokens.",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.3.5/Requests_1.0.0.3.5.zip",
+                         "checksum":  "BD7EC505A8E81FF7A5282F49EAB68933",
+                         "timestamp":  "2026-11-05T16:25:44Z"
+                     },
+                     {
+                         "version":  "1.0.0.3",
+                         "changelog":  "TMDb search and UI fixes, including API error details and Jellyfin base URL support",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.3/Requests_1.0.0.3.zip",
+                         "checksum":  "67818F1DFB90A670C023613D74B2E1EC",
+                         "timestamp":  "2026-11-05T05:09:12Z"
+                     },
+                     {
+                         "version":  "1.0.0.2",
+                         "changelog":  "TMDB integration and UI testing",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.2/Requests_1.0.0.2.zip",
+                         "checksum":  "92F5F39F0A457862B4F312068C8B4A30",
+                         "timestamp":  "2026-11-05T04:37:28Z"
+                     },
+                     {
+                         "version":  "1.0.0.1",
+                         "changelog":  "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.1/Requests_1.0.0.1.zip",
+                         "checksum":  "9CD239CE819501B5FDEF40CA8AEC6374",
+                         "timestamp":  "2026-11-05T03:35:13Z"
+                     },
+                     {
+                         "version":  "1.0.0.0",
+                         "changelog":  "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0/Requests_1.0.0.zip",
+                         "checksum":  "FA88ECDDDDB86D0FB16C256D13E3F2D67C642875ECF2EB3A00C1E5D6B073C20E",
+                         "timestamp":  "2026-11-04T21:00:00Z"
+                     }
+                 ]
+}]
