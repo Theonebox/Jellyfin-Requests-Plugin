@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.Requests.Controllers;
 
 [ApiController]
-[Authorize]
+[AllowAnonymous]
 [Route("Requests")]
 public sealed class RequestController : ControllerBase
 {
