@@ -61,6 +61,49 @@
     }
 
     async function apiRequest(url, options) {
+        const apiClient = window.ApiClient;
+        if (apiClient && typeof apiClient.ajax === "function") {
+            try {
+                const method = options && options.method ? String(options.method).toUpperCase() : "GET";
+                const headers = apiHeaders();
+                const ajaxOptions = {
+                    type: method,
+                    url: apiUrl(url),
+                    dataType: "json",
+                    headers
+                };
+
+                if (options && options.body !== undefined) {
+                    ajaxOptions.data = options.body;
+                    ajaxOptions.contentType = options.headers && options.headers["Content-Type"]
+                        ? options.headers["Content-Type"]
+                        : "application/json";
+                    ajaxOptions.processData = false;
+                }
+
+                return await apiClient.ajax(ajaxOptions);
+            } catch (error) {
+                const status = error && error.status
+                    ? error.status
+                    : error && error.statusCode;
+                let message = "Unable to contact TMDb.";
+
+                if (error && error.responseJSON && (error.responseJSON.error || error.responseJSON.message)) {
+                    message = error.responseJSON.error || error.responseJSON.message;
+                } else if (error && error.responseText) {
+                    try {
+                        const body = JSON.parse(error.responseText);
+                        message = body.error || body.message || message;
+                    } catch (_) {
+                        // Keep the friendly fallback.
+                    }
+                }
+
+                const suffix = status ? ` (${status})` : "";
+                throw new Error(`${message}${suffix}`);
+            }
+        }
+
         const response = await fetch(apiUrl(url), {
             ...options,
             headers: {
