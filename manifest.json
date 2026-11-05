@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.45",
+                "changelog": "Fixes Jellyfin API authentication challenges and updates the package checksum and version metadata.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.45/Requests_1.0.0.45.zip",
+                "checksum": "fb7c5523d5dc0a0ecc635b11111e8b89",
+                "timestamp": "2026-11-05T20:40:00Z"
+            },
+            {
                 "version": "1.0.0.4",
                 "changelog": "Fixes Jellyfin API authentication challenges and TMDb v3/v4 credential handling.",
                 "targetAbi": "12.4.0",
