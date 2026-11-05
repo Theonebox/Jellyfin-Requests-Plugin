@@ -12,7 +12,7 @@
         "changelog": "Initial release for Jellyfin 12.4.",
         "targetAbi": "12.4.0.0",
         "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0/Requests_1.0.0.zip",
-        "checksum": "2FDED9A9B8ABC91C158DA6738D9A700CDD287C5F0E5266154EE13BBE95FAC0C9",
+        "checksum": "8E5DC6C4FD2660F8B807A310AB28CF6B",
         "timestamp": "2026-11-04T21:00:00Z"
       }
     ]
