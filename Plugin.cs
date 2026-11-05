@@ -2,17 +2,20 @@ using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
+using Jellyfin.Plugin.Requests.Services;
 
 namespace Jellyfin.Plugin.Requests;
 
 public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     public static Plugin? Instance { get; private set; }
+    public static RequestService? Requests { get; private set; }
 
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
     }
 
     public override string Name => "Requests";

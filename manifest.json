@@ -9,10 +9,10 @@
     "versions": [
       {
         "version": "1.0.0.0",
-        "changelog": "Initial release for Jellyfin 12.4.",
+        "changelog": "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
         "targetAbi": "12.4.0.0",
         "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0/Requests_1.0.0.zip",
-        "checksum": "8E5DC6C4FD2660F8B807A310AB28CF6B",
+        "checksum": "FA88ECDDDDB86D0FB16C256D13E3F2D67C642875ECF2EB3A00C1E5D6B073C20E",
         "timestamp": "2026-11-04T21:00:00Z"
       }
     ]
