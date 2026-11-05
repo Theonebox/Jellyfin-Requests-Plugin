@@ -12,8 +12,8 @@
                 "changelog": "Fixes Jellyfin API authentication challenges and TMDb v3/v4 credential handling.",
                 "targetAbi": "12.4.0",
                 "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.4/Requests_1.0.0.4.zip",
-                "checksum": "148b04a43b37ab56607843ee14fc8165",
-                "timestamp": "2026-11-05T20:21:44Z"
+                "checksum": "c8c16d5e3ef3774a6d1710ad40e554b9",
+                "timestamp": "2026-11-05T20:35:00Z"
             }
         ]
     }
