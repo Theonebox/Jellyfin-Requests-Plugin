@@ -41,18 +41,29 @@ public sealed class TmdbService
 
         var apiKey = GetApiKey();
         var encodedQuery = Uri.EscapeDataString(query.Trim());
-        var url = $"{BaseUrl}/search/{endpoint}?api_key={Uri.EscapeDataString(apiKey)}&query={encodedQuery}&include_adult=false";
+        var isBearerToken = apiKey.Length >= 50;
+        var url = isBearerToken
+            ? $"{BaseUrl}/search/{endpoint}?query={encodedQuery}&include_adult=false"
+            : $"{BaseUrl}/search/{endpoint}?api_key={Uri.EscapeDataString(apiKey)}&query={encodedQuery}&include_adult=false";
 
         try
         {
-            using var response = await _httpClient.GetAsync(url).ConfigureAwait(false);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Accept.ParseAdd("application/json");
+            if (isBearerToken)
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+            }
+
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
             var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
                 throw new TmdbServiceException(
                     response.StatusCode == HttpStatusCode.Unauthorized
-                        ? "The configured TMDb API key is invalid or unauthorized."
+                        ? "TMDb rejected the configured credentials."
                         : $"TMDb returned an error: {(int)response.StatusCode} {response.ReasonPhrase}",
                     response.StatusCode);
             }
