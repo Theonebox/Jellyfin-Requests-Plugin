@@ -1,20 +1,18 @@
-[
-  {
-    "guid": "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
-    "name": "Requests",
-    "description": "Allows users to submit media requests.",
-    "overview": "A Jellyfin plugin for requesting movies and TV shows.",
-    "owner": "Theonebox",
-    "category": "General",
-    "versions": [
-      {
-        "version": "1.0.0.3.6",
-        "changelog": "TMDb v3 API key and v4 bearer token support, with final plugin packaging fixes.",
-        "targetAbi": "12.4.0.0",
-        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.3.6/Requests_1.0.0.3.6.zip",
-        "checksum": "1901E57552280D94E9E2296209862864",
-        "timestamp": "2026-11-05T16:41:05Z"
-      }
-    ]
-  }
-]
+{
+    "guid":  "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
+    "name":  "Requests",
+    "description":  "Allows users to submit media requests.",
+    "overview":  "A Jellyfin plugin for requesting movies and TV shows.",
+    "owner":  "Theonebox",
+    "category":  "General",
+    "versions":  [
+                     {
+                         "version":  "1.0.0.3.6",
+                         "changelog":  "TMDb v3 API key and v4 bearer token support, with final plugin packaging fixes.",
+                         "targetAbi":  "12.4.0.0",
+                         "sourceUrl":  "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.3.6/Requests_1.0.0.3.6.zip",
+                         "checksum":  "503E26435EC744C04C5E79F085266B38",
+                         "timestamp":  "2026-11-05T16:48:05Z"
+                     }
+                 ]
+}
