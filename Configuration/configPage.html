@@ -1,0 +1,52 @@
+<div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+    <div data-role="content">
+        <div class="content-primary">
+            <form id="requestsConfigForm">
+                <div class="verticalSection">
+                    <div class="sectionTitleContainer flex align-items-center">
+                        <h2 class="sectionTitle">Requests</h2>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="tmdbApiKey">TMDB API key</label>
+                        <input id="tmdbApiKey" name="tmdbApiKey" type="password" is="emby-input" />
+                        <div class="fieldDescription">API key used to search TMDB.</div>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            const pluginId = "6A5A5B44-639D-4F8A-934F-7AEB03475F91";
+            const page = document.querySelector("#requestsConfigPage");
+
+            page.addEventListener("viewshow", function () {
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    page.querySelector("#tmdbApiKey").value = config.TmdbApiKey || "";
+                });
+            });
+
+            page.querySelector("#requestsConfigForm").addEventListener("submit", function (event) {
+                event.preventDefault();
+
+                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                    config.TmdbApiKey = page.querySelector("#tmdbApiKey").value.trim();
+
+                    ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    });
+                });
+
+                return false;
+            });
+        })();
+    </script>
+</div>
