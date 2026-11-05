@@ -43,7 +43,7 @@ public sealed class RequestService
         }
     }
 
-    public MediaRequest Create(MediaRequest request)
+    public MediaRequest Add(MediaRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -58,28 +58,25 @@ public sealed class RequestService
         }
     }
 
-    public MediaRequest? Update(Guid id, MediaRequest update, RequestStatus? status = null)
+    public MediaRequest? Update(MediaRequest update)
     {
         ArgumentNullException.ThrowIfNull(update);
 
         lock (_syncRoot)
         {
-            var request = _requests.FirstOrDefault(item => item.Id == id);
+            var request = _requests.FirstOrDefault(item => item.Id == update.Id);
             if (request is null)
             {
                 return null;
             }
 
-            request.UserId = update.UserId != Guid.Empty ? update.UserId : request.UserId;
+            request.UserId = string.IsNullOrWhiteSpace(update.UserId) ? request.UserId : update.UserId.Trim();
             request.UserName = string.IsNullOrWhiteSpace(update.UserName) ? request.UserName : update.UserName.Trim();
             request.MediaId = string.IsNullOrWhiteSpace(update.MediaId) ? request.MediaId : update.MediaId.Trim();
             request.Title = string.IsNullOrWhiteSpace(update.Title) ? request.Title : update.Title.Trim();
             request.MediaType = string.IsNullOrWhiteSpace(update.MediaType) ? request.MediaType : update.MediaType.Trim();
             request.Overview = update.Overview?.Trim() ?? request.Overview;
-            if (status.HasValue)
-            {
-                request.Status = status.Value;
-            }
+            request.Status = update.Status;
             Save();
             return Clone(request);
         }

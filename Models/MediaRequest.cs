@@ -1,12 +1,10 @@
-using System.Text.Json.Serialization;
-
 namespace Jellyfin.Plugin.Requests.Models;
 
 public sealed class MediaRequest
 {
     public Guid Id { get; set; }
 
-    public Guid UserId { get; set; }
+    public string UserId { get; set; } = string.Empty;
 
     public string UserName { get; set; } = string.Empty;
 

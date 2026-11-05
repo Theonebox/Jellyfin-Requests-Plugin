@@ -8,6 +8,14 @@
     "category": "General",
     "versions": [
       {
+        "version": "1.0.0.2",
+        "changelog": "TMDB integration and UI testing",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.2/Requests_1.0.0.2.zip",
+        "checksum": "92F5F39F0A457862B4F312068C8B4A30",
+        "timestamp": "2026-11-05T04:37:28Z"
+      },
+      {
         "version": "1.0.0.1",
         "changelog": "Milestone 2: added persistent media request models, JSON-backed CRUD service, and REST API endpoints.",
         "targetAbi": "12.4.0.0",

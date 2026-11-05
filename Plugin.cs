@@ -10,12 +10,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     public static Plugin? Instance { get; private set; }
     public static RequestService? Requests { get; private set; }
+    public static TmdbService Tmdb { get; private set; } = new();
 
     public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
         Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
+        Tmdb = new TmdbService();
     }
 
     public override string Name => "Requests";
@@ -32,6 +34,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 Name = "Requests",
                 DisplayName = "Requests",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
+            },
+            new PluginPageInfo
+            {
+                Name = "RequestsUser",
+                DisplayName = "Media Requests",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html"
             }
         };
     }

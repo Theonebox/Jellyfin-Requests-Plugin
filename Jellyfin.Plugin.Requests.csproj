@@ -4,7 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0.1</Version>
+    <Version>1.0.0.2</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -19,6 +19,9 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Web\requests.html" />
+    <EmbeddedResource Include="Web\requests.css" />
+    <EmbeddedResource Include="Web\requests.js" />
   </ItemGroup>
 
 </Project>

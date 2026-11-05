@@ -1,0 +1,28 @@
+<div id="requestsPage" data-role="page" class="page type-interior requestsPage">
+    <link rel="stylesheet" href="/Requests/Web/requests.css">
+
+    <div class="requests-content">
+        <h1 class="requests-title">Media Requests</h1>
+
+        <form id="requestsSearchForm" class="requests-search" autocomplete="off">
+            <label for="requestsSearchInput" class="fieldDescription">Search Movies and TV Shows</label>
+            <div class="requests-search-row">
+                <input
+                    id="requestsSearchInput"
+                    class="requests-search-input"
+                    type="search"
+                    placeholder="Search Movies and TV Shows"
+                    required
+                    is="emby-input">
+                <button id="requestsSearchButton" type="submit" class="raised button-submit emby-button">
+                    Search
+                </button>
+            </div>
+        </form>
+
+        <div id="requestsStatus" class="requests-status" role="status" aria-live="polite"></div>
+        <div id="requestsResults" class="requests-results"></div>
+    </div>
+
+    <script src="/Requests/Web/requests.js"></script>
+</div>

@@ -50,7 +50,7 @@ public sealed class RequestController : ControllerBase
             Overview = model.Overview?.Trim() ?? string.Empty
         };
 
-        var created = _requestService.Create(request);
+        var created = _requestService.Add(request);
         return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
     }
 
@@ -62,18 +62,24 @@ public sealed class RequestController : ControllerBase
             return BadRequest();
         }
 
-        var updated = _requestService.Update(
-            id,
-            new MediaRequest
-            {
-                UserId = model.UserId ?? Guid.Empty,
-                UserName = model.UserName ?? string.Empty,
-                MediaId = model.MediaId ?? string.Empty,
-                Title = model.Title ?? string.Empty,
-                MediaType = model.MediaType ?? string.Empty,
-                Overview = model.Overview ?? string.Empty
-            },
-            model.Status);
+        var existing = _requestService.GetById(id);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        var updated = _requestService.Update(new MediaRequest
+        {
+            Id = id,
+            UserId = model.UserId ?? existing.UserId,
+            UserName = model.UserName ?? existing.UserName,
+            MediaId = model.MediaId ?? existing.MediaId,
+            Title = model.Title ?? existing.Title,
+            MediaType = model.MediaType ?? existing.MediaType,
+            Overview = model.Overview ?? existing.Overview,
+            RequestedAtUtc = existing.RequestedAtUtc,
+            Status = model.Status ?? existing.Status
+        });
 
         return updated is null ? NotFound() : Ok(updated);
     }
@@ -84,19 +90,19 @@ public sealed class RequestController : ControllerBase
         return _requestService.Delete(id) ? NoContent() : NotFound();
     }
 
-    private Guid GetUserId()
+    private string GetUserId()
     {
         var claims = User.Claims;
         foreach (var claim in claims)
         {
             if ((claim.Type == ClaimTypes.NameIdentifier || claim.Type == "UserId" || claim.Type == "uid")
-                && Guid.TryParse(claim.Value, out var userId))
+                && !string.IsNullOrWhiteSpace(claim.Value))
             {
-                return userId;
+                return claim.Value.Trim();
             }
         }
 
-        return Guid.Empty;
+        return string.Empty;
     }
 
     private string GetUserName()
@@ -126,7 +132,7 @@ public sealed class CreateRequestModel
 
 public sealed class UpdateRequestModel
 {
-    public Guid? UserId { get; set; }
+    public string? UserId { get; set; }
 
     public string? UserName { get; set; }
 
