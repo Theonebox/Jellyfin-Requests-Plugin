@@ -32,8 +32,32 @@
         const token = apiClient && typeof apiClient.accessToken === "function"
             ? apiClient.accessToken()
             : null;
+        const headers = {};
 
-        return token ? { "X-Emby-Token": token } : {};
+        if (apiClient && typeof apiClient.getRequestHeaders === "function") {
+            try {
+                Object.assign(headers, apiClient.getRequestHeaders() || {});
+            } catch (_) {
+                // Fall back to the API token header below.
+            }
+        }
+
+        if (token) {
+            headers["X-Emby-Token"] = token;
+        }
+
+        if (!headers.Authorization && apiClient && typeof apiClient.authorizationHeader === "function") {
+            try {
+                const authorization = apiClient.authorizationHeader();
+                if (authorization) {
+                    headers.Authorization = authorization;
+                }
+            } catch (_) {
+                // The X-Emby-Token header remains the fallback.
+            }
+        }
+
+        return headers;
     }
 
     async function apiRequest(url, options) {

@@ -39,33 +39,51 @@ public sealed class TmdbService
             throw new ArgumentException("A search query is required.", nameof(query));
         }
 
-        var apiKey = GetApiKey();
+        var apiKey = NormalizeCredential(GetApiKey());
         var encodedQuery = Uri.EscapeDataString(query.Trim());
-        var isBearerToken = apiKey.Length >= 50;
-        var url = isBearerToken
-            ? $"{BaseUrl}/search/{endpoint}?query={encodedQuery}&include_adult=false"
-            : $"{BaseUrl}/search/{endpoint}?api_key={Uri.EscapeDataString(apiKey)}&query={encodedQuery}&include_adult=false";
+        var isLikelyApiKey = IsV3ApiKey(apiKey);
+        var strategies = isLikelyApiKey
+            ? new[] { CredentialType.ApiKey }
+            : new[] { CredentialType.Bearer, CredentialType.ApiKey };
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Accept.ParseAdd("application/json");
-            if (isBearerToken)
+            string? json = null;
+            HttpStatusCode failedStatus = HttpStatusCode.Unauthorized;
+
+            foreach (var strategy in strategies)
             {
-                request.Headers.Authorization =
-                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                var url = strategy == CredentialType.Bearer
+                    ? $"{BaseUrl}/search/{endpoint}?query={encodedQuery}&include_adult=false"
+                    : $"{BaseUrl}/search/{endpoint}?api_key={Uri.EscapeDataString(apiKey)}&query={encodedQuery}&include_adult=false";
+
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Accept.ParseAdd("application/json");
+                if (strategy == CredentialType.Bearer)
+                {
+                    request.Headers.Authorization =
+                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+                }
+
+                using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+                var responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    json = responseJson;
+                    break;
+                }
+
+                failedStatus = response.StatusCode;
             }
 
-            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
-            var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
+            if (json is null)
             {
                 throw new TmdbServiceException(
-                    response.StatusCode == HttpStatusCode.Unauthorized
+                    failedStatus == HttpStatusCode.Unauthorized
                         ? "TMDb rejected the configured credentials."
-                        : $"TMDb returned an error: {(int)response.StatusCode} {response.ReasonPhrase}",
-                    response.StatusCode);
+                        : $"TMDb returned an error: {(int)failedStatus}",
+                    failedStatus);
             }
 
             using var document = JsonDocument.Parse(json);
@@ -139,6 +157,24 @@ public sealed class TmdbService
         return apiKey;
     }
 
+    private static string NormalizeCredential(string credential)
+    {
+        var normalized = credential.Trim().Trim('"', '\'');
+        if (normalized.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized["Bearer ".Length..].Trim();
+        }
+
+        return normalized;
+    }
+
+    private static bool IsV3ApiKey(string credential)
+    {
+        return credential.Length == 32
+            && credential.All(character =>
+                char.IsAsciiHexDigit(character));
+    }
+
     private static string GetString(JsonElement element, string propertyName)
     {
         if (element.TryGetProperty(propertyName, out var value)
@@ -160,6 +196,12 @@ public sealed class TmdbService
                 ? date
                 : null;
     }
+}
+
+internal enum CredentialType
+{
+    ApiKey,
+    Bearer
 }
 
 public sealed class TmdbServiceException : Exception
