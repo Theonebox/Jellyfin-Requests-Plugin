@@ -95,6 +95,7 @@ public sealed class RequestService : IRequestService
             request.RequestedEpisodeIds = update.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? request.RequestedEpisodeIds;
             request.RequestedEpisodeNames = update.RequestedEpisodeNames?.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? request.RequestedEpisodeNames;
             request.Note = update.Note?.Trim() ?? request.Note;
+            request.MediaQuality = string.IsNullOrWhiteSpace(update.MediaQuality) ? request.MediaQuality : update.MediaQuality.Trim();
             request.Status = update.Status;
             Save();
             return Clone(request);
@@ -206,7 +207,8 @@ public sealed class RequestService : IRequestService
             RequestedSeasonNumbers = request.RequestedSeasonNumbers?.ToList() ?? new List<int>(),
             RequestedEpisodeIds = request.RequestedEpisodeIds?.ToList() ?? new List<string>(),
             RequestedEpisodeNames = request.RequestedEpisodeNames?.ToList() ?? new List<string>(),
-            Note = request.Note ?? string.Empty
+            Note = request.Note ?? string.Empty,
+            MediaQuality = request.MediaQuality?.Trim() ?? string.Empty
         };
     }
 
@@ -266,6 +268,7 @@ public sealed class RequestService : IRequestService
         request.RequestedEpisodeIds = request.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
         request.RequestedEpisodeNames = request.RequestedEpisodeNames?.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
         request.Note = request.Note?.Trim() ?? string.Empty;
+        request.MediaQuality = request.MediaQuality?.Trim() ?? string.Empty;
 
         if (request.MediaCategory == MediaCategory.TVShows)
         {

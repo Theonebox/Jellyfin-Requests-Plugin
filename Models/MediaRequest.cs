@@ -38,6 +38,8 @@ public sealed class MediaRequest
 
     public string Note { get; set; } = string.Empty;
 
+    public string MediaQuality { get; set; } = string.Empty;
+
     public DateTime RequestedAtUtc { get; set; }
 
     public RequestStatus Status { get; set; } = RequestStatus.Pending;

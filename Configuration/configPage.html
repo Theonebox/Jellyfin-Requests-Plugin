@@ -1,5 +1,5 @@
 <div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
-    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.51">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.52">
     <div data-role="content">
         <div class="content-primary">
             <h2 class="sectionTitle">Jellyfin Requests</h2>
@@ -7,6 +7,7 @@
             <div class="verticalSection">
                 <div class="buttonGroup">
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
+                    <button type="button" class="raised emby-button requests-config-tab" data-tab="generalSettings" id="requestsGeneralSettingsTab" hidden>General Settings</button>
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="search">Search</button>
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
                     <button type="button" class="raised button-submit emby-button" id="openRequestsPage">
@@ -21,6 +22,18 @@
                     <div class="fieldDescription">
                         Jellyfin Requests is enabled and uses Jellyfin metadata identification for search.
                     </div>
+                </div>
+            </div>
+
+            <div class="requests-config-panel" data-panel="generalSettings" hidden>
+                <div class="verticalSection">
+                    <h3>General Settings</h3>
+                    <div class="fieldDescription">Add or remove the media quality choices shown to requesters.</div>
+                    <div class="requests-quality-settings">
+                        <input id="requestsQualityNewOption" type="text" is="emby-input" placeholder="Example: 1440p">
+                        <button type="button" class="raised button-submit emby-button" id="requestsQualityAdd">Add Option</button>
+                    </div>
+                    <div id="requestsQualityOptions" class="requests-quality-option-list"></div>
                 </div>
             </div>
 
@@ -62,7 +75,9 @@
                                     <th data-sort="userName">Requested By</th>
                                     <th data-sort="title">Title</th>
                                     <th data-sort="mediaType">Media Type</th>
+                                    <th data-sort="note">Notes</th>
                                     <th data-sort="scope">Request Scope</th>
+                                    <th data-sort="mediaQuality">Media Quality</th>
                                     <th data-sort="status">Status</th>
                                     <th>Actions</th>
                                 </tr>
@@ -81,6 +96,7 @@
                             <dt>Date</dt><dd id="requestsDetailsDate"></dd>
                             <dt>Media Type</dt><dd id="requestsDetailsMediaType"></dd>
                             <dt>Scope</dt><dd id="requestsDetailsScope"></dd>
+                            <dt>Media Quality</dt><dd id="requestsDetailsQuality"></dd>
                             <dt>Provider</dt><dd id="requestsDetailsProvider"></dd>
                             <dt>Year</dt><dd id="requestsDetailsYear"></dd>
                             <dt>Status</dt><dd id="requestsDetailsStatus"></dd>
@@ -159,6 +175,73 @@
                 return span.innerHTML;
             }
 
+            let qualityOptions = [];
+
+            async function loadQualityOptions() {
+                const response = await fetch("/Requests/Configuration/QualityOptions", { credentials: "same-origin", headers: requestHeaders() });
+                if (!response.ok) {
+                    throw new Error("Unable to load media quality options.");
+                }
+                const data = await response.json();
+                qualityOptions = Array.isArray(data.options) ? data.options : [];
+                renderQualityOptions();
+            }
+
+            function renderQualityOptions() {
+                const container = page.querySelector("#requestsQualityOptions");
+                container.replaceChildren();
+                qualityOptions.forEach(function (option, index) {
+                    const row = document.createElement("div");
+                    row.className = "requests-quality-option-row";
+                    const input = document.createElement("input");
+                    input.type = "text";
+                    input.value = option;
+                    input.className = "emby-input";
+                    const save = document.createElement("button");
+                    save.type = "button";
+                    save.className = "raised emby-button";
+                    save.textContent = "Save";
+                    save.addEventListener("click", async function () {
+                        const value = input.value.trim();
+                        if (!value) return;
+                        qualityOptions[index] = value;
+                        await saveQualityOptions();
+                    });
+                    const remove = document.createElement("button");
+                    remove.type = "button";
+                    remove.className = "raised emby-button";
+                    remove.textContent = "Delete";
+                    remove.addEventListener("click", async function () {
+                        qualityOptions.splice(index, 1);
+                        await saveQualityOptions();
+                    });
+                    row.append(input, save, remove);
+                    container.append(row);
+                });
+            }
+
+            async function saveQualityOptions() {
+                const response = await fetch("/Requests/Configuration/QualityOptions", {
+                    method: "PUT",
+                    credentials: "same-origin",
+                    headers: { ...requestHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify({ options: qualityOptions })
+                });
+                if (!response.ok) throw new Error("Unable to save media quality options.");
+                await loadQualityOptions();
+            }
+
+            page.querySelector("#requestsQualityAdd").addEventListener("click", async function () {
+                const input = page.querySelector("#requestsQualityNewOption");
+                const value = input.value.trim();
+                if (!value) return;
+                qualityOptions.push(value);
+                await saveQualityOptions();
+                input.value = "";
+            });
+
+            page.querySelector("#requestsQualityOptions").addEventListener("error", function () {});
+
             async function loadAdminRequests() {
                 try {
                     const response = await fetch("/Requests", { credentials: "same-origin", headers: requestHeaders() });
@@ -173,7 +256,7 @@
                     rows.replaceChildren();
                     const tr = document.createElement("tr");
                     const td = document.createElement("td");
-                    td.colSpan = 7;
+                    td.colSpan = 9;
                     td.textContent = error.message || "Unable to load requests.";
                     tr.append(td);
                     rows.append(tr);
@@ -200,6 +283,7 @@
                 page.querySelector("#requestsDetailsDate").textContent = date ? new Date(date).toLocaleString() : "";
                 page.querySelector("#requestsDetailsMediaType").textContent = valueFor(request, "mediaType", "MediaType") || "";
                 page.querySelector("#requestsDetailsScope").textContent = requestScope(request);
+                page.querySelector("#requestsDetailsQuality").textContent = valueFor(request, "mediaQuality", "MediaQuality") || "Not specified";
                 page.querySelector("#requestsDetailsProvider").textContent = valueFor(request, "sourceProvider", "SourceProvider") || "";
                 page.querySelector("#requestsDetailsYear").textContent = valueFor(request, "productionYear", "ProductionYear") || "";
                 page.querySelector("#requestsDetailsStatus").textContent = valueFor(request, "status", "Status") || "";
@@ -243,7 +327,9 @@
                         `<td>${escapeHtml(valueFor(request, "userName", "UserName") || "Unknown")}</td>` +
                         `<td><button type="button" class="requests-details-link" data-action="details">${escapeHtml(valueFor(request, "title", "Title") || "")}</button></td>` +
                         `<td>${escapeHtml(valueFor(request, "mediaType", "MediaType") || "")}</td>` +
+                        `<td>${escapeHtml(valueFor(request, "note", "Note") || "")}</td>` +
                         `<td>${escapeHtml(requestScope(request))}</td>` +
+                        `<td>${escapeHtml(valueFor(request, "mediaQuality", "MediaQuality") || "")}</td>` +
                         `<td><select class="requests-status-select" data-action="status">${["Pending","Approved","Denied","InProgress","Available","Completed","Cancelled"].map(function (item) {
                             return `<option${item === status ? " selected" : ""}>${item}</option>`;
                         }).join("")}</select></td>` +
@@ -285,6 +371,10 @@
             });
 
             page.addEventListener("viewshow", function () {
+                loadQualityOptions().catch(function () {
+                    qualityOptions = ["720p", "1080p", "4K"];
+                    renderQualityOptions();
+                });
                 fetch("/Requests/Search/Providers", { credentials: "same-origin" })
                     .then(function (response) {
                         if (!response.ok) {

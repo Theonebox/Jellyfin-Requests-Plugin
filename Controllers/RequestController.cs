@@ -23,7 +23,19 @@ public sealed class RequestController : ControllerBase
     [HttpGet]
     public ActionResult<IReadOnlyList<MediaRequest>> GetAll()
     {
-        return Ok(_requestService.GetAll());
+        var requests = _requestService.GetAll();
+        var userId = GetUserId();
+        if (IsAdministrator())
+        {
+            return Ok(requests);
+        }
+
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Ok(Array.Empty<MediaRequest>());
+        }
+
+        return Ok(requests.Where(request => string.Equals(request.UserId, userId, StringComparison.OrdinalIgnoreCase)).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -61,7 +73,8 @@ public sealed class RequestController : ControllerBase
             RequestedSeasonNumbers = model.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? new List<int>(),
             RequestedEpisodeIds = model.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
             RequestedEpisodeNames = model.RequestedEpisodeNames?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
-            Note = model.Note?.Trim() ?? string.Empty
+            Note = model.Note?.Trim() ?? string.Empty,
+            MediaQuality = model.MediaQuality?.Trim() ?? string.Empty
         };
         try
         {
@@ -109,7 +122,8 @@ public sealed class RequestController : ControllerBase
             RequestedSeasonNumbers = model.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? existing.RequestedSeasonNumbers,
             RequestedEpisodeIds = model.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? existing.RequestedEpisodeIds,
             RequestedEpisodeNames = model.RequestedEpisodeNames?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? existing.RequestedEpisodeNames,
-            Note = model.Note ?? existing.Note
+            Note = model.Note ?? existing.Note,
+            MediaQuality = model.MediaQuality?.Trim() ?? existing.MediaQuality
         });
 
         return updated is null ? NotFound() : Ok(updated);
@@ -124,6 +138,11 @@ public sealed class RequestController : ControllerBase
     [HttpPut("{id:guid}/status")]
     public ActionResult<MediaRequest> UpdateStatus(Guid id, [FromBody] UpdateStatusModel model)
     {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
         if (model is null || !Enum.IsDefined(model.Status))
         {
             return BadRequest("A valid request status is required.");
@@ -180,6 +199,27 @@ public sealed class RequestController : ControllerBase
         return User.FindFirst(ClaimTypes.Name)?.Value
             ?? User.FindFirst("UserName")?.Value
             ?? string.Empty;
+    }
+
+    private bool IsAdministrator()
+    {
+        if (User.IsInRole("Administrator"))
+        {
+            return true;
+        }
+
+        foreach (var claim in User.Claims)
+        {
+            if ((claim.Type == ClaimTypes.Role || claim.Type == "IsAdministrator"
+                    || claim.Type == "UserRole")
+                && (string.Equals(claim.Value, "Administrator", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(claim.Value, "True", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static MediaCategory InferMediaCategory(string? mediaType)
@@ -250,6 +290,8 @@ public sealed class CreateRequestModel
     public List<string>? RequestedEpisodeNames { get; set; }
 
     public string? Note { get; set; }
+
+    public string? MediaQuality { get; set; }
 }
 
 public sealed class UpdateRequestModel
@@ -289,6 +331,8 @@ public sealed class UpdateRequestModel
     public List<string>? RequestedEpisodeNames { get; set; }
 
     public string? Note { get; set; }
+
+    public string? MediaQuality { get; set; }
 }
 
 public sealed class UpdateStatusModel

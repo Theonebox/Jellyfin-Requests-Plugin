@@ -14,6 +14,7 @@
     const status = page.querySelector("#requestsStatus");
     const results = page.querySelector("#requestsResults");
     const requestedKeys = new Set();
+    let mediaQualityOptions = ["720p", "1080p", "4K"];
 
     function apiUrl(url) {
         const apiClient = window.ApiClient;
@@ -127,78 +128,98 @@
         return String(mediaType || "").toLowerCase() === "tv" ? "TV Show" : "Movie";
     }
 
-    async function loadExistingRequests() {
+    function currentUserId() {
+        const apiClient = window.ApiClient;
+        if (apiClient && typeof apiClient.getCurrentUserId === "function") {
+            return apiClient.getCurrentUserId() || "";
+        }
+        return "";
+    }
+
+    async function loadMyRequests() {
+        const list = page.querySelector("#requestsMyList");
+        const myStatus = page.querySelector("#requestsMyStatus");
+        if (!list || !myStatus) {
+            return;
+        }
+
+        list.replaceChildren();
+        myStatus.className = "requests-status";
+        myStatus.textContent = "Loading...";
+
         try {
             const requests = await apiRequest("/Requests", { method: "GET" });
+            const userId = currentUserId();
+            const visibleRequests = userId
+                ? (requests || []).filter(function (request) {
+                    const ownerId = valueFor(request, "userId", "UserId") || "";
+                    return !ownerId || ownerId === userId;
+                })
+                : (requests || []);
+
+            requestedKeys.clear();
             for (const request of requests || []) {
-                const normalized = request && {
-                    mediaType: valueFor(request, "mediaType", "MediaType"),
-                    providerId: valueFor(request, "providerId", "ProviderId"),
-                    mediaId: valueFor(request, "mediaId", "MediaId")
-                };
-                const mediaType = String(normalized.mediaType || "").toLowerCase();
-                const id = normalized.providerId || normalized.mediaId || "";
+                const mediaType = String(valueFor(request, "mediaType", "MediaType") || "").toLowerCase();
+                const id = valueFor(request, "providerId", "ProviderId") || valueFor(request, "mediaId", "MediaId") || "";
                 if (id) {
                     requestedKeys.add(`${mediaType}:${id}`);
                 }
             }
 
-            function currentUserId() {
-                const apiClient = window.ApiClient;
-                if (apiClient && typeof apiClient.getCurrentUserId === "function") {
-                    return apiClient.getCurrentUserId() || "";
-                }
-                return "";
+            if (visibleRequests.length === 0) {
+                myStatus.textContent = "No requested media yet.";
+                return;
             }
 
-            async function loadMyRequests() {
-                const list = page.querySelector("#requestsMyList");
-                const myStatus = page.querySelector("#requestsMyStatus");
-                list.replaceChildren();
-                myStatus.className = "requests-status";
-                myStatus.textContent = "Loading...";
+            myStatus.textContent = `${visibleRequests.length} request${visibleRequests.length === 1 ? "" : "s"}`;
+            visibleRequests.forEach(function (request) {
+                const card = document.createElement("article");
+                card.className = "requests-my-card";
+                const title = document.createElement("h3");
+                title.textContent = valueFor(request, "title", "Title") || "Untitled";
+                const mediaType = valueFor(request, "mediaType", "MediaType") || "";
+                const scope = valueFor(request, "requestScope", "RequestScope") || "";
+                const quality = valueFor(request, "mediaQuality", "MediaQuality") || "";
+                const statusValue = valueFor(request, "status", "Status") || "Pending";
+                const detail = document.createElement("div");
+                detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim(), quality].filter(Boolean).join(" · ");
+                const state = document.createElement("div");
+                state.textContent = `Status: ${statusValue}`;
+                card.append(title, detail, state);
+                list.append(card);
+            });
+        } catch (error) {
+            myStatus.className = "requests-status error";
+            myStatus.textContent = error.message || "Unable to load requested media.";
+        }
+    }
 
-                try {
-                    const requests = await apiRequest("/Requests", { method: "GET" });
-                    const userId = currentUserId();
-                    const visibleRequests = userId
-                        ? (requests || []).filter(function (request) {
-                            const ownerId = valueFor(request, "userId", "UserId") || "";
-                            return !ownerId || ownerId === userId;
-                        })
-                        : (requests || []);
+    async function loadExistingRequests() {
+        await loadMyRequests();
+    }
 
-                    if (visibleRequests.length === 0) {
-                        myStatus.textContent = "No requested media yet.";
-                        return;
-                    }
+    function populateQualitySelect(select, options) {
+        select.replaceChildren();
+        for (const option of options) {
+            const element = document.createElement("option");
+            element.value = option;
+            element.textContent = option;
+            select.append(element);
+        }
+    }
 
-                    myStatus.textContent = `${visibleRequests.length} request${visibleRequests.length === 1 ? "" : "s"}`;
-                    visibleRequests.forEach(function (request) {
-                        const card = document.createElement("article");
-                        card.className = "requests-my-card";
-
-                        const title = document.createElement("h3");
-                        title.textContent = valueFor(request, "title", "Title") || "Untitled";
-
-                        const mediaType = valueFor(request, "mediaType", "MediaType") || "";
-                        const scope = valueFor(request, "requestScope", "RequestScope") || "";
-                        const statusValue = valueFor(request, "status", "Status") || "Pending";
-                        const detail = document.createElement("div");
-                        detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim()].filter(Boolean).join(" · ");
-
-                        const state = document.createElement("div");
-                        state.textContent = `Status: ${statusValue}`;
-                        card.append(title, detail, state);
-                        list.append(card);
-                    });
-                } catch (error) {
-                    myStatus.className = "requests-status error";
-                    myStatus.textContent = error.message || "Unable to load requested media.";
-                }
-            }
+    async function loadQualityOptions() {
+        try {
+            const data = await apiRequest("/Requests/Configuration/QualityOptions", { method: "GET" });
+            const options = Array.isArray(data.options) && data.options.length
+                ? data.options
+                : ["720p", "1080p", "4K"];
+            mediaQualityOptions = options;
+            populateQualitySelect(page.querySelector("#requestsMovieQuality"), options);
+            populateQualitySelect(page.querySelector("#requestsTvQuality"), options);
         } catch (_) {
-            // Searching can still work even if the existing-request list is unavailable.
+            populateQualitySelect(page.querySelector("#requestsMovieQuality"), mediaQualityOptions);
+            populateQualitySelect(page.querySelector("#requestsTvQuality"), mediaQualityOptions);
         }
     }
 
@@ -247,6 +268,7 @@
 
         modal.dataset.item = JSON.stringify(item);
         modal.dataset.button = "tv";
+        page.querySelector("#requestsTvNote").value = "";
         modal.hidden = false;
 
         submit.onclick = async function () {
@@ -257,6 +279,7 @@
     async function submitTvRequest(item, requestButton, submitButton) {
         const scope = page.querySelector('input[name="requestsTvScope"]:checked').value;
         const note = page.querySelector("#requestsTvNote").value.trim();
+        const mediaQuality = page.querySelector("#requestsTvQuality").value || "";
         const seasonNumbers = Array.from(page.querySelectorAll(".requests-season-checkbox:checked"))
             .map(function (checkbox) { return Number(checkbox.value); });
         const episodeText = page.querySelector("#requestsEpisodeIds").value;
@@ -296,7 +319,8 @@
                     requestedSeasonNumbers: scope === "SeasonSelection" ? seasonNumbers : [],
                     requestedEpisodeIds: scope === "EpisodeSelection" ? episodeIds : [],
                     requestedEpisodeNames: scope === "EpisodeSelection" ? episodeNames : [],
-                    note: note
+                    note: note,
+                    mediaQuality: mediaQuality
                 })
             });
             requestedKeys.add(mediaKey(item));
@@ -323,9 +347,13 @@
         const modal = page.querySelector("#requestsMovieModal");
         const submit = page.querySelector("#requestsMovieSubmit");
         page.querySelector("#requestsMovieNote").value = "";
+        page.querySelector("#requestsMovieQuality").value =
+            page.querySelector("#requestsMovieQuality").options[0]?.value || "";
         modal.hidden = false;
         submit.onclick = async function () {
             const note = page.querySelector("#requestsMovieNote").value.trim();
+            const mediaQuality = page.querySelector("#requestsMovieQuality").value || "";
+            submit.movieMediaQuality = mediaQuality;
             await submitRequest(item, requestButton, note);
         };
     }
@@ -360,7 +388,8 @@
                     requestedSeasonNumbers: [],
                     requestedEpisodeIds: [],
                     requestedEpisodeNames: [],
-                    note: note || ""
+                    note: note || "",
+                    mediaQuality: page.querySelector("#requestsMovieQuality").value || ""
                 })
             });
 
@@ -487,5 +516,6 @@
     page.querySelector(".requests-modal-backdrop").addEventListener("click", closeTvModal);
     page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
     page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
+    loadQualityOptions();
     loadMyRequests();
 })();

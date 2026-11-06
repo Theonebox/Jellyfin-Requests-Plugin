@@ -1,5 +1,5 @@
 <div id="requestsPage" data-role="page" class="page type-interior requestsPage">
-    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.51">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.52">
 
     <div class="requests-content">
         <h1 class="requests-title">Media Requests</h1>
@@ -49,6 +49,8 @@
                     <input id="requestsEpisodeIds" type="text" is="emby-input" placeholder="S01E01, S01E02">
                 </div>
             </div>
+            <label for="requestsTvQuality">Media quality</label>
+            <select id="requestsTvQuality" class="requests-quality-select" is="emby-select" aria-label="Media quality"></select>
             <label for="requestsTvNote">Optional note</label>
             <textarea id="requestsTvNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
             <div class="requests-modal-actions">
@@ -62,6 +64,8 @@
         <div class="requests-modal-backdrop"></div>
         <div class="requests-modal-panel">
             <h2 id="requestsMovieModalTitle">Request Movie</h2>
+            <label for="requestsMovieQuality">Media quality</label>
+            <select id="requestsMovieQuality" class="requests-quality-select" is="emby-select" aria-label="Media quality"></select>
             <label for="requestsMovieNote">Optional note</label>
             <textarea id="requestsMovieNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
             <div class="requests-modal-actions">
@@ -71,5 +75,5 @@
         </div>
     </div>
 
-    <script src="/Requests/Web/requests.js?v=1.0.0.51"></script>
+    <script src="/Requests/Web/requests.js?v=1.0.0.52"></script>
 </div>

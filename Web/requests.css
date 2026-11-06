@@ -231,6 +231,25 @@
     box-sizing: border-box;
 }
 
+.requests-quality-select {
+    width: 100%;
+    min-height: 36px;
+    margin: 6px 0 14px;
+}
+
+.requests-quality-settings,
+.requests-quality-option-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.requests-quality-settings input,
+.requests-quality-option-row input {
+    flex: 1 1 auto;
+}
+
 .requests-modal-actions {
     justify-content: flex-end;
     margin-top: 16px;

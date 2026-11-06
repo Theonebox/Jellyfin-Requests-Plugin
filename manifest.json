@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.52",
+                "changelog": "Fixes requested-media state refresh, adds configurable movie and TV media quality selections, adds administrator request management columns for notes and quality, and adds General Settings quality-option controls.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.52/Requests_1.0.0.52.zip",
+                "checksum": "a76dc2af79cce1b1b5988ec84e27518c",
+                "timestamp": "2026-11-06T22:07:12Z"
+            },
+            {
                 "version": "1.0.0.51",
                 "changelog": "Fixes movie requests by separating the movie dialog from the TV modal; enlarges the search box, reduces the media dropdown size, adds a visible My Requests list, and repairs the manifest JSON for reliable installation.",
                 "targetAbi": "12.4.0",
