@@ -71,7 +71,7 @@
         });
 
         if (!response.ok) {
-            let message = "Unable to contact TMDb.";
+            let message = "Unable to search Jellyfin metadata providers.";
             try {
                 const body = await response.json();
                 if (body.error || body.message) {
@@ -93,16 +93,11 @@
     }
 
     function mediaKey(item) {
-        return `${item.mediaType}:${item.id}`;
+        return `${String(item.mediaType || "").toLowerCase()}:${item.providerId}`;
     }
 
     function releaseYear(item) {
-        if (!item.releaseDate) {
-            return "";
-        }
-
-        const date = new Date(item.releaseDate);
-        return Number.isNaN(date.getTime()) ? "" : String(date.getUTCFullYear());
+        return item.productionYear ? String(item.productionYear) : "";
     }
 
     function mediaLabel(mediaType) {
@@ -123,14 +118,14 @@
     function createPoster(item) {
         const poster = document.createElement("div");
         poster.className = "requests-card-poster requests-card-poster-placeholder";
-        poster.textContent = item.posterPath ? "" : "No poster";
+        poster.textContent = item.posterUrl ? "" : "No poster";
 
-        if (item.posterPath) {
+        if (item.posterUrl) {
             const image = document.createElement("img");
             image.className = "requests-card-poster";
             image.alt = item.name || "Media poster";
             image.loading = "lazy";
-            image.src = item.posterPath;
+            image.src = item.posterUrl;
             image.addEventListener("error", function () {
                 image.replaceWith(poster);
             });
@@ -149,10 +144,14 @@
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    mediaId: String(item.id),
+                    mediaId: item.providerId || "",
                     title: item.name || "",
                     mediaType: mediaLabel(item.mediaType),
-                    overview: item.overview || ""
+                    overview: item.overview || "",
+                    providerId: item.providerId || "",
+                    providerIds: item.providerIds || {},
+                    productionYear: item.productionYear || null,
+                    sourceProvider: item.sourceProvider || ""
                 })
             });
 
@@ -182,7 +181,10 @@
 
         const meta = document.createElement("div");
         meta.className = "requests-card-meta";
-        meta.textContent = mediaLabel(item.mediaType);
+        meta.textContent = [
+            mediaLabel(item.mediaType),
+            item.sourceProvider ? `Source: ${item.sourceProvider}` : ""
+        ].filter(Boolean).join(" · ");
 
         const overview = document.createElement("p");
         overview.className = "requests-card-overview";
@@ -193,7 +195,7 @@
         requestButton.className = "raised button-submit emby-button requests-card-button";
 
         const key = mediaKey(item);
-        const normalizedKey = `${String(item.mediaType || "").toLowerCase()}:${item.id}`;
+        const normalizedKey = `${String(item.mediaType || "").toLowerCase()}:${item.providerId}`;
         if (requestedKeys.has(key) || requestedKeys.has(normalizedKey)) {
             requestButton.textContent = "✓ Requested";
             requestButton.disabled = true;
@@ -220,15 +222,7 @@
         try {
             await loadExistingRequests();
             const encodedQuery = encodeURIComponent(query);
-            const [movies, tvShows] = await Promise.all([
-                apiRequest(`/Requests/Search/Movie?query=${encodedQuery}`, { method: "GET" }),
-                apiRequest(`/Requests/Search/TV?query=${encodedQuery}`, { method: "GET" })
-            ]);
-
-            const combined = [
-                ...(Array.isArray(movies) ? movies : []),
-                ...(Array.isArray(tvShows) ? tvShows : [])
-            ];
+            const combined = await apiRequest(`/Requests/Search?query=${encodedQuery}`, { method: "GET" });
 
             if (combined.length === 0) {
                 status.textContent = "No results found.";
@@ -241,7 +235,7 @@
             });
         } catch (error) {
             status.className = "requests-status error";
-            status.textContent = error.message || "Unable to contact TMDb.";
+            status.textContent = error.message || "Unable to search Jellyfin metadata providers.";
         } finally {
             button.disabled = false;
             input.disabled = false;

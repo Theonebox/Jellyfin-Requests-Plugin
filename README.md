@@ -6,7 +6,10 @@ A Jellyfin plugin for requesting media.
 
 - Jellyfin 12.4 or later
 - .NET 10 runtime
-- A TMDB API key
+
+## Search
+
+Media search uses Jellyfin's native metadata identification workflow. Results come from the metadata providers configured in Jellyfin; no external provider API key is required by the plugin.
 
 ## Installation
 

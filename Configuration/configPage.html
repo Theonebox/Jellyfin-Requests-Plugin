@@ -1,52 +1,88 @@
-<div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button">
+<div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
     <div data-role="content">
         <div class="content-primary">
-            <form id="requestsConfigForm">
+            <h2 class="sectionTitle">Jellyfin Requests</h2>
+
+            <div class="verticalSection">
+                <div class="buttonGroup">
+                    <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
+                    <button type="button" class="raised emby-button requests-config-tab" data-tab="search">Search</button>
+                    <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
+                </div>
+            </div>
+
+            <div class="requests-config-panel" data-panel="general">
                 <div class="verticalSection">
-                    <div class="sectionTitleContainer flex align-items-center">
-                        <h2 class="sectionTitle">Requests</h2>
-                    </div>
-
-                    <div class="inputContainer">
-                        <label class="inputLabel inputLabelUnfocused" for="tmdbApiKey">TMDB API key or Read Access Token</label>
-                        <input id="tmdbApiKey" name="tmdbApiKey" type="password" is="emby-input" />
-                        <div class="fieldDescription">Enter a TMDB v3 API key or v4 Read Access Token.</div>
-                    </div>
-
-                    <div>
-                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
-                            <span>Save</span>
-                        </button>
+                    <h3>General</h3>
+                    <div class="fieldDescription">
+                        Jellyfin Requests is enabled and uses Jellyfin metadata identification for search.
                     </div>
                 </div>
-            </form>
+            </div>
+
+            <div class="requests-config-panel" data-panel="search" hidden>
+                <div class="verticalSection">
+                    <h3>Search</h3>
+                    <dl>
+                        <dt><strong>Search Provider</strong></dt>
+                        <dd id="requestsSearchProvider">Jellyfin Metadata Identification</dd>
+                        <dt><strong>Provider Status</strong></dt>
+                        <dd id="requestsProviderStatus">Checking...</dd>
+                        <dt><strong>Metadata Sources</strong></dt>
+                        <dd id="requestsMetadataSources">Loading...</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <div class="requests-config-panel" data-panel="requests" hidden>
+                <div class="verticalSection">
+                    <h3>Requests</h3>
+                    <div class="fieldDescription">
+                        Media requests are persisted automatically in Jellyfin plugin configuration storage.
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
     <script type="text/javascript">
         (function () {
-            const pluginId = "6A5A5B44-639D-4F8A-934F-7AEB03475F91";
             const page = document.querySelector("#requestsConfigPage");
 
-            page.addEventListener("viewshow", function () {
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    page.querySelector("#tmdbApiKey").value = config.TmdbApiKey || "";
-                });
-            });
-
-            page.querySelector("#requestsConfigForm").addEventListener("submit", function (event) {
-                event.preventDefault();
-
-                ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    config.TmdbApiKey = page.querySelector("#tmdbApiKey").value.trim();
-
-                    ApiClient.updatePluginConfiguration(pluginId, config).then(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
+            page.querySelectorAll(".requests-config-tab").forEach(function (button) {
+                button.addEventListener("click", function () {
+                    const tab = button.dataset.tab;
+                    page.querySelectorAll(".requests-config-panel").forEach(function (panel) {
+                        panel.hidden = panel.dataset.panel !== tab;
                     });
                 });
-
-                return false;
             });
-        })();
+
+            page.addEventListener("viewshow", function () {
+                fetch("/Requests/Search/Providers", { credentials: "same-origin" })
+                    .then(function (response) {
+                        if (!response.ok) {
+                            throw new Error("Unable to load metadata provider information.");
+                        }
+                        return response.json();
+                    })
+                    .then(function (info) {
+                        page.querySelector("#requestsSearchProvider").textContent =
+                            info.searchProvider || "Jellyfin Metadata Identification";
+                        page.querySelector("#requestsProviderStatus").textContent =
+                            info.status || "Available";
+                        page.querySelector("#requestsMetadataSources").textContent =
+                            info.metadataSources && info.metadataSources.length
+                                ? info.metadataSources.join(", ")
+                                : "No configured metadata providers reported";
+                    })
+                    .catch(function () {
+                        page.querySelector("#requestsProviderStatus").textContent =
+                            "Metadata providers unavailable";
+                        page.querySelector("#requestsMetadataSources").textContent =
+                            "Unable to load provider information";
+                    });
+            });
+        }());
     </script>
 </div>

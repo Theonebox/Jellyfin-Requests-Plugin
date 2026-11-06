@@ -16,6 +16,14 @@ public sealed class MediaRequest
 
     public string Overview { get; set; } = string.Empty;
 
+    public string ProviderId { get; set; } = string.Empty;
+
+    public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public string SourceProvider { get; set; } = string.Empty;
+
+    public int? ProductionYear { get; set; }
+
     public DateTime RequestedAtUtc { get; set; }
 
     public RequestStatus Status { get; set; } = RequestStatus.Pending;

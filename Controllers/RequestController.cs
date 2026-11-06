@@ -47,7 +47,13 @@ public sealed class RequestController : ControllerBase
             MediaId = model.MediaId?.Trim() ?? string.Empty,
             Title = model.Title.Trim(),
             MediaType = model.MediaType?.Trim() ?? string.Empty,
-            Overview = model.Overview?.Trim() ?? string.Empty
+            Overview = model.Overview?.Trim() ?? string.Empty,
+            ProviderId = model.ProviderId?.Trim() ?? string.Empty,
+            ProviderIds = model.ProviderIds is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(model.ProviderIds, StringComparer.OrdinalIgnoreCase),
+            ProductionYear = model.ProductionYear,
+            SourceProvider = model.SourceProvider?.Trim() ?? string.Empty
         };
 
         var created = _requestService.Add(request);
@@ -77,6 +83,10 @@ public sealed class RequestController : ControllerBase
             Title = model.Title ?? existing.Title,
             MediaType = model.MediaType ?? existing.MediaType,
             Overview = model.Overview ?? existing.Overview,
+            ProviderId = model.ProviderId ?? existing.ProviderId,
+            ProviderIds = model.ProviderIds ?? existing.ProviderIds,
+            ProductionYear = model.ProductionYear ?? existing.ProductionYear,
+            SourceProvider = model.SourceProvider ?? existing.SourceProvider,
             RequestedAtUtc = existing.RequestedAtUtc,
             Status = model.Status ?? existing.Status
         });
@@ -128,6 +138,14 @@ public sealed class CreateRequestModel
     public string? MediaType { get; set; }
 
     public string? Overview { get; set; }
+
+    public string? ProviderId { get; set; }
+
+    public Dictionary<string, string>? ProviderIds { get; set; }
+
+    public int? ProductionYear { get; set; }
+
+    public string? SourceProvider { get; set; }
 }
 
 public sealed class UpdateRequestModel
@@ -143,6 +161,14 @@ public sealed class UpdateRequestModel
     public string? MediaType { get; set; }
 
     public string? Overview { get; set; }
+
+    public string? ProviderId { get; set; }
+
+    public Dictionary<string, string>? ProviderIds { get; set; }
+
+    public int? ProductionYear { get; set; }
+
+    public string? SourceProvider { get; set; }
 
     public RequestStatus? Status { get; set; }
 }

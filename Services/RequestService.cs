@@ -76,6 +76,12 @@ public sealed class RequestService
             request.Title = string.IsNullOrWhiteSpace(update.Title) ? request.Title : update.Title.Trim();
             request.MediaType = string.IsNullOrWhiteSpace(update.MediaType) ? request.MediaType : update.MediaType.Trim();
             request.Overview = update.Overview?.Trim() ?? request.Overview;
+            request.ProviderId = string.IsNullOrWhiteSpace(update.ProviderId) ? request.ProviderId : update.ProviderId.Trim();
+            request.ProviderIds = update.ProviderIds?.Count > 0
+                ? new Dictionary<string, string>(update.ProviderIds, StringComparer.OrdinalIgnoreCase)
+                : request.ProviderIds;
+            request.SourceProvider = string.IsNullOrWhiteSpace(update.SourceProvider) ? request.SourceProvider : update.SourceProvider.Trim();
+            request.ProductionYear = update.ProductionYear ?? request.ProductionYear;
             request.Status = update.Status;
             Save();
             return Clone(request);
@@ -142,6 +148,12 @@ public sealed class RequestService
             Title = request.Title,
             MediaType = request.MediaType,
             Overview = request.Overview,
+            ProviderId = request.ProviderId,
+            ProviderIds = request.ProviderIds is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(request.ProviderIds, StringComparer.OrdinalIgnoreCase),
+            SourceProvider = request.SourceProvider,
+            ProductionYear = request.ProductionYear,
             RequestedAtUtc = request.RequestedAtUtc,
             Status = request.Status
         };

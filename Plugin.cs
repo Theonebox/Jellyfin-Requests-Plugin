@@ -3,6 +3,7 @@ using MediaBrowser.Common.Plugins;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Jellyfin.Plugin.Requests.Services;
+using MediaBrowser.Controller.Providers;
 
 namespace Jellyfin.Plugin.Requests;
 
@@ -10,14 +11,14 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     public static Plugin? Instance { get; private set; }
     public static RequestService? Requests { get; private set; }
-    public static TmdbService Tmdb { get; private set; } = new();
+    public static MetadataIdentifyService? MetadataIdentify { get; private set; }
 
-    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer)
+    public Plugin(IApplicationPaths applicationPaths, IXmlSerializer xmlSerializer, IProviderManager providerManager)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
         Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
-        Tmdb = new TmdbService();
+        MetadataIdentify = new MetadataIdentifyService(providerManager);
     }
 
     public override string Name => "Requests";
