@@ -68,8 +68,13 @@ public sealed class MetadataIdentifyService
     {
         foreach (var result in results)
         {
+            if (string.IsNullOrWhiteSpace(result.Name))
+            {
+                continue;
+            }
+
             var providerIds = result.ProviderIds ?? new Dictionary<string, string>();
-            var providerId = GetProviderId(providerIds, "Imdb", "Tvdb");
+            var providerId = GetProviderId(providerIds, "Tmdb", "Imdb", "Tvdb");
             destination.Add(new MetadataSearchResult
             {
                 ProviderId = providerId,

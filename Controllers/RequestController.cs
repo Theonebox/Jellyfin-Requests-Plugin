@@ -3,6 +3,7 @@ using Jellyfin.Plugin.Requests.Models;
 using Jellyfin.Plugin.Requests.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 namespace Jellyfin.Plugin.Requests.Controllers;
 
@@ -131,20 +132,28 @@ public sealed class RequestController : ControllerBase
 
 public sealed class CreateRequestModel
 {
+    [JsonPropertyName("mediaId")]
     public string? MediaId { get; set; }
 
+    [JsonPropertyName("title")]
     public string? Title { get; set; }
 
+    [JsonPropertyName("mediaType")]
     public string? MediaType { get; set; }
 
+    [JsonPropertyName("overview")]
     public string? Overview { get; set; }
 
+    [JsonPropertyName("providerId")]
     public string? ProviderId { get; set; }
 
+    [JsonPropertyName("providerIds")]
     public Dictionary<string, string>? ProviderIds { get; set; }
 
+    [JsonPropertyName("productionYear")]
     public int? ProductionYear { get; set; }
 
+    [JsonPropertyName("sourceProvider")]
     public string? SourceProvider { get; set; }
 }
 

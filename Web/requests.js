@@ -92,6 +92,27 @@
         return element.innerHTML;
     }
 
+    function valueFor(item, camelName, pascalName) {
+        const value = item && item[camelName];
+        return value !== undefined && value !== null
+            ? value
+            : item && item[pascalName];
+    }
+
+    function normalizeResult(item) {
+        const providerIds = valueFor(item, "providerIds", "ProviderIds") || {};
+        return {
+            providerId: String(valueFor(item, "providerId", "ProviderId") || ""),
+            name: String(valueFor(item, "name", "Name") || ""),
+            overview: String(valueFor(item, "overview", "Overview") || ""),
+            mediaType: String(valueFor(item, "mediaType", "MediaType") || ""),
+            posterUrl: String(valueFor(item, "posterUrl", "PosterUrl") || ""),
+            productionYear: valueFor(item, "productionYear", "ProductionYear") || null,
+            sourceProvider: String(valueFor(item, "sourceProvider", "SourceProvider") || ""),
+            providerIds: providerIds
+        };
+    }
+
     function mediaKey(item) {
         return `${String(item.mediaType || "").toLowerCase()}:${item.providerId}`;
     }
@@ -108,7 +129,16 @@
         try {
             const requests = await apiRequest("/Requests", { method: "GET" });
             for (const request of requests || []) {
-                requestedKeys.add(`${String(request.mediaType || "").toLowerCase()}:${request.mediaId}`);
+                const normalized = request && {
+                    mediaType: valueFor(request, "mediaType", "MediaType"),
+                    providerId: valueFor(request, "providerId", "ProviderId"),
+                    mediaId: valueFor(request, "mediaId", "MediaId")
+                };
+                const mediaType = String(normalized.mediaType || "").toLowerCase();
+                const id = normalized.providerId || normalized.mediaId || "";
+                if (id) {
+                    requestedKeys.add(`${mediaType}:${id}`);
+                }
             }
         } catch (_) {
             // Searching can still work even if the existing-request list is unavailable.
@@ -136,6 +166,13 @@
     }
 
     async function submitRequest(item, requestButton) {
+        item = normalizeResult(item);
+        if (!item.name.trim()) {
+            status.className = "requests-status error";
+            status.textContent = "This result is missing its title metadata.";
+            return;
+        }
+
         requestButton.disabled = true;
         requestButton.textContent = "Requesting...";
 
@@ -231,7 +268,7 @@
 
             status.textContent = `${combined.length} result${combined.length === 1 ? "" : "s"}`;
             combined.forEach(function (item) {
-                results.append(createResultFragment(item));
+                results.append(createResultFragment(normalizeResult(item)));
             });
         } catch (error) {
             status.className = "requests-status error";
