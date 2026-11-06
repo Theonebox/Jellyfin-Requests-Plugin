@@ -1,5 +1,5 @@
 <div id="requestsPage" data-role="page" class="page type-interior requestsPage">
-    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.50">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.51">
 
     <div class="requests-content">
         <h1 class="requests-title">Media Requests</h1>
@@ -19,7 +19,7 @@
                     <option value="TV Shows">TV Shows</option>
                     <option value="All">All</option>
                 </select>
-                <button id="requestsSearchButton" type="submit" class="raised button-submit emby-button">
+                <button id="requestsSearchButton" class="raised button-submit emby-button requests-search-button" type="submit">
                     Search
                 </button>
             </div>
@@ -27,6 +27,12 @@
 
         <div id="requestsStatus" class="requests-status" role="status" aria-live="polite"></div>
         <div id="requestsResults" class="requests-results"></div>
+
+        <section class="requests-my-section">
+            <h2>My Requests</h2>
+            <div id="requestsMyStatus" class="requests-status" role="status"></div>
+            <div id="requestsMyList" class="requests-my-list"></div>
+        </section>
     </div>
 
     <div id="requestsTvModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsTvModalTitle">
@@ -42,19 +48,6 @@
                     <label for="requestsEpisodeIds">Episode IDs or codes</label>
                     <input id="requestsEpisodeIds" type="text" is="emby-input" placeholder="S01E01, S01E02">
                 </div>
-
-                <div id="requestsMovieModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsMovieModalTitle">
-                    <div class="requests-modal-backdrop"></div>
-                    <div class="requests-modal-panel">
-                        <h2 id="requestsMovieModalTitle">Request Movie</h2>
-                        <label for="requestsMovieNote">Optional note</label>
-                        <textarea id="requestsMovieNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
-                        <div class="requests-modal-actions">
-                            <button id="requestsMovieCancel" type="button" class="raised emby-button">Cancel</button>
-                            <button id="requestsMovieSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
-                        </div>
-                    </div>
-                </div>
             </div>
             <label for="requestsTvNote">Optional note</label>
             <textarea id="requestsTvNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
@@ -65,5 +58,18 @@
         </div>
     </div>
 
-    <script src="/Requests/Web/requests.js?v=1.0.0.50"></script>
+    <div id="requestsMovieModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsMovieModalTitle">
+        <div class="requests-modal-backdrop"></div>
+        <div class="requests-modal-panel">
+            <h2 id="requestsMovieModalTitle">Request Movie</h2>
+            <label for="requestsMovieNote">Optional note</label>
+            <textarea id="requestsMovieNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
+            <div class="requests-modal-actions">
+                <button id="requestsMovieCancel" type="button" class="raised emby-button">Cancel</button>
+                <button id="requestsMovieSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/Requests/Web/requests.js?v=1.0.0.51"></script>
 </div>

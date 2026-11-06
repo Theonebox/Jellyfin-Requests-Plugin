@@ -20,11 +20,38 @@
 
 .requests-search-input {
     flex: 1;
+    width: min(100%, 760px);
     min-width: 0;
 }
 
 .requests-media-type {
-    min-width: 150px;
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
+}
+
+.requests-search-button {
+    flex: 0 0 auto;
+}
+
+.requests-my-section {
+    margin-top: 36px;
+}
+
+.requests-my-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--requests-card-gap);
+}
+
+.requests-my-card {
+    padding: 14px;
+    border-radius: 6px;
+    background: rgba(128, 128, 128, 0.12);
+}
+
+.requests-my-card h3 {
+    margin-top: 0;
 }
 
 .requests-status {

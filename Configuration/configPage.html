@@ -1,5 +1,5 @@
 <div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
-    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.50">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.51">
     <div data-role="content">
         <div class="content-primary">
             <h2 class="sectionTitle">Jellyfin Requests</h2>
@@ -160,12 +160,24 @@
             }
 
             async function loadAdminRequests() {
-                const response = await fetch("/Requests", { credentials: "same-origin", headers: requestHeaders() });
-                if (!response.ok) {
-                    throw new Error("Unable to load requests.");
+                try {
+                    const response = await fetch("/Requests", { credentials: "same-origin", headers: requestHeaders() });
+                    if (!response.ok) {
+                        throw new Error("Unable to load requests.");
+                    }
+                    adminRequests = await response.json();
+                    renderAdminRequests();
+                } catch (error) {
+                    adminRequests = [];
+                    const rows = page.querySelector("#requestsAdminRows");
+                    rows.replaceChildren();
+                    const tr = document.createElement("tr");
+                    const td = document.createElement("td");
+                    td.colSpan = 7;
+                    td.textContent = error.message || "Unable to load requests.";
+                    tr.append(td);
+                    rows.append(tr);
                 }
-                adminRequests = await response.json();
-                renderAdminRequests();
             }
 
             async function setRequestStatus(id, status) {

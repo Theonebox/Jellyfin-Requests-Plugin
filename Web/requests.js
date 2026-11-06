@@ -142,6 +142,61 @@
                     requestedKeys.add(`${mediaType}:${id}`);
                 }
             }
+
+            function currentUserId() {
+                const apiClient = window.ApiClient;
+                if (apiClient && typeof apiClient.getCurrentUserId === "function") {
+                    return apiClient.getCurrentUserId() || "";
+                }
+                return "";
+            }
+
+            async function loadMyRequests() {
+                const list = page.querySelector("#requestsMyList");
+                const myStatus = page.querySelector("#requestsMyStatus");
+                list.replaceChildren();
+                myStatus.className = "requests-status";
+                myStatus.textContent = "Loading...";
+
+                try {
+                    const requests = await apiRequest("/Requests", { method: "GET" });
+                    const userId = currentUserId();
+                    const visibleRequests = userId
+                        ? (requests || []).filter(function (request) {
+                            const ownerId = valueFor(request, "userId", "UserId") || "";
+                            return !ownerId || ownerId === userId;
+                        })
+                        : (requests || []);
+
+                    if (visibleRequests.length === 0) {
+                        myStatus.textContent = "No requested media yet.";
+                        return;
+                    }
+
+                    myStatus.textContent = `${visibleRequests.length} request${visibleRequests.length === 1 ? "" : "s"}`;
+                    visibleRequests.forEach(function (request) {
+                        const card = document.createElement("article");
+                        card.className = "requests-my-card";
+
+                        const title = document.createElement("h3");
+                        title.textContent = valueFor(request, "title", "Title") || "Untitled";
+
+                        const mediaType = valueFor(request, "mediaType", "MediaType") || "";
+                        const scope = valueFor(request, "requestScope", "RequestScope") || "";
+                        const statusValue = valueFor(request, "status", "Status") || "Pending";
+                        const detail = document.createElement("div");
+                        detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim()].filter(Boolean).join(" · ");
+
+                        const state = document.createElement("div");
+                        state.textContent = `Status: ${statusValue}`;
+                        card.append(title, detail, state);
+                        list.append(card);
+                    });
+                } catch (error) {
+                    myStatus.className = "requests-status error";
+                    myStatus.textContent = error.message || "Unable to load requested media.";
+                }
+            }
         } catch (_) {
             // Searching can still work even if the existing-request list is unavailable.
         }
@@ -249,6 +304,7 @@
             requestButton.textContent = "✓ Requested";
             requestButton.disabled = true;
             requestButton.classList.add("requested");
+            loadMyRequests();
         } catch (error) {
             status.className = "requests-status error";
             status.textContent = error.message || "Unable to submit the request.";
@@ -311,7 +367,9 @@
             requestedKeys.add(mediaKey(item));
             requestButton.textContent = "✓ Requested";
             requestButton.classList.add("requested");
+            requestButton.disabled = true;
             closeMovieModal();
+            loadMyRequests();
         } catch (error) {
             requestButton.disabled = false;
             requestButton.textContent = "Request";
@@ -429,4 +487,5 @@
     page.querySelector(".requests-modal-backdrop").addEventListener("click", closeTvModal);
     page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
     page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
+    loadMyRequests();
 })();
