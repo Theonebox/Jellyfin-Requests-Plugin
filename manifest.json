@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.51",
+                "changelog": "Fixes movie requests by separating the movie dialog from the TV modal; enlarges the search box, reduces the media dropdown size, and adds a visible My Requests list with persisted request status.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.51/Requests_1.0.0.51.zip",
+                "checksum": "5463641e8f98c76b4bef9857128cfe55",
+                "timestamp": "2026-11-06T21:24:16Z"
+            },
+            {
                 "version": "1.0.0.50",
                 "changelog": "Adds Request Management v2: administration search and filtering, sortable request records, expanded status controls, details dialogs, movie notes, TV season and episode requests, duplicate protection, persistence migration, and native Jellyfin metadata identification.",
                 "targetAbi": "12.4.0",
@@ -15,46 +23,11 @@
                 "checksum": "815e0212d85293446449ea94e261c642",
                 "timestamp": "2026-11-06T21:07:09Z"
             },
-            {
-                "version": "1.0.0.47",
-                "changelog": "Fixes metadata result casing so titles, overviews, posters, years, and provider data display correctly; fixes Request submissions that previously received an empty title; adds cache-busting for the user page.",
-                "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.47/Requests_1.0.0.47.zip",
-                "checksum": "a896cc111e9cb618042df3e62e14da44",
-                "timestamp": "2026-11-06T06:15:00Z"
-            },
-            {
-                "version": "1.0.0.46",
-                "changelog": "Adds an installed plugin manifest for reliable Jellyfin upgrade reconciliation and exposes the Media Requests search page from plugin navigation, while replacing direct TMDb search with native Jellyfin metadata identification.",
-                "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.46/Requests_1.0.0.46.zip",
-                "checksum": "f4b9c3d4b268c1826c730c89bfbaf05a",
-                "timestamp": "2026-11-06T02:15:00Z"
-            },
-            {
-                "version": "1.0.0.5",
-                "changelog": "Replaces direct external search integration with Jellyfin native metadata identification for movie and TV search, with provider metadata request persistence and updated configuration tabs.",
-                "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.5/Requests_1.0.0.5.zip",
-                "checksum": "73ecec5b836df48da0e5c36f6f74cc0a",
-                "timestamp": "2026-11-06T01:42:39Z"
-            },
-            {
-                "version": "1.0.0.45",
-                "changelog": "Fixes Jellyfin API authentication challenges and updates the package checksum and version metadata.",
-                "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.45/Requests_1.0.0.45.zip",
-                "checksum": "fb7c5523d5dc0a0ecc635b11111e8b89",
-                "timestamp": "2026-11-05T20:40:00Z"
-            },
-            {
-                "version": "1.0.0.4",
-                "changelog": "Fixes Jellyfin API authentication challenges and request package metadata.",
-                "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.4/Requests_1.0.0.4.zip",
-                "checksum": "c8c16d5e3ef3774a6d1710ad40e554b9",
-                "timestamp": "2026-11-05T20:35:00Z"
-            }
+            {"version":"1.0.0.47","changelog":"Fixes metadata result casing so titles, overviews, posters, years, and provider data display correctly; fixes Request submissions that previously received an empty title; adds cache-busting for the user page.","targetAbi":"12.4.0","sourceUrl":"https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.47/Requests_1.0.0.47.zip","checksum":"a896cc111e9cb618042df3e62e14da44","timestamp":"2026-11-06T06:15:00Z"},
+            {"version":"1.0.0.46","changelog":"Adds an installed plugin manifest for reliable Jellyfin upgrade reconciliation and exposes the Media Requests search page from plugin navigation, while replacing direct TMDb search with native Jellyfin metadata identification.","targetAbi":"12.4.0","sourceUrl":"https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.46/Requests_1.0.0.46.zip","checksum":"f4b9c3d4b268c1826c730c89bfbaf05a","timestamp":"2026-11-06T02:15:00Z"},
+            {"version":"1.0.0.5","changelog":"Replaces direct external search integration with Jellyfin native metadata identification for movie and TV search, with provider metadata request persistence and updated configuration tabs.","targetAbi":"12.4.0","sourceUrl":"https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.5/Requests_1.0.0.5.zip","checksum":"73ecec5b836df48da0e5c36f6f74cc0a","timestamp":"2026-11-06T01:42:39Z"},
+            {"version":"1.0.0.45","changelog":"Fixes Jellyfin API authentication challenges and updates the package checksum and version metadata.","targetAbi":"12.4.0","sourceUrl":"https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.45/Requests_1.0.0.45.zip","checksum":"fb7c5523d5dc0a0ecc635b11111e8b89","timestamp":"2026-11-05T20:40:00Z"},
+            {"version":"1.0.0.4","changelog":"Fixes Jellyfin API authentication challenges and request package metadata.","targetAbi":"12.4.0","sourceUrl":"https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.4/Requests_1.0.0.4.zip","checksum":"c8c16d5e3ef3774a6d1710ad40e554b9","timestamp":"2026-11-05T20:35:00Z"}
         ]
     }
 ]
