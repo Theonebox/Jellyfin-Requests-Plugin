@@ -38,6 +38,21 @@ public sealed class RequestController : ControllerBase
         return Ok(requests.Where(request => string.Equals(request.UserId, userId, StringComparison.OrdinalIgnoreCase)).ToList());
     }
 
+    [HttpGet("my")]
+    public ActionResult<IReadOnlyList<MediaRequest>> GetMyRequests()
+    {
+        var userId = GetUserId();
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return Ok(Array.Empty<MediaRequest>());
+        }
+
+        var requests = _requestService.GetAll()
+            .Where(request => string.Equals(request.UserId, userId, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return Ok(requests);
+    }
+
     [HttpGet("{id:guid}")]
     public ActionResult<MediaRequest> GetById(Guid id)
     {
@@ -132,6 +147,20 @@ public sealed class RequestController : ControllerBase
     [HttpDelete("{id:guid}")]
     public IActionResult Delete(Guid id)
     {
+        var existing = _requestService.GetById(id);
+        if (existing is null)
+        {
+            return NotFound();
+        }
+
+        var userId = GetUserId();
+        if (!IsAdministrator()
+            && (string.IsNullOrWhiteSpace(userId)
+                || !string.Equals(existing.UserId, userId, StringComparison.OrdinalIgnoreCase)))
+        {
+            return StatusCode(403, new { error = "You can only cancel your own requests." });
+        }
+
         return _requestService.Delete(id) ? NoContent() : NotFound();
     }
 
@@ -150,6 +179,20 @@ public sealed class RequestController : ControllerBase
 
         var updated = _requestService.UpdateStatus(id, model.Status);
         return updated is null ? NotFound() : Ok(updated);
+    }
+
+    [HttpGet("library-status")]
+    public ActionResult<object> GetLibraryStatus(
+        [FromQuery] string title,
+        [FromQuery] int? productionYear,
+        [FromQuery] string providerId)
+    {
+        var availability = Plugin.LibraryAvailability;
+        var providerIds = string.IsNullOrWhiteSpace(providerId)
+            ? Array.Empty<string>()
+            : new[] { providerId };
+        var inLibrary = availability?.IsInLibrary(title, productionYear, providerIds) ?? false;
+        return Ok(new { inLibrary, status = inLibrary ? "In Library" : "" });
     }
 
     [HttpPost("duplicate-check")]

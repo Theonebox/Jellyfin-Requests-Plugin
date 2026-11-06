@@ -54,6 +54,18 @@
     margin-top: 0;
 }
 
+.requests-my-actions {
+    margin-top: 12px;
+}
+
+.requests-my-cancel {
+    width: 100%;
+}
+
+.requests-card-button.in-library {
+    cursor: default;
+}
+
 .requests-status {
     min-height: 24px;
     margin: 18px 0 8px;

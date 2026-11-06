@@ -148,17 +148,10 @@
         myStatus.textContent = "Loading...";
 
         try {
-            const requests = await apiRequest("/Requests", { method: "GET" });
-            const userId = currentUserId();
-            const visibleRequests = userId
-                ? (requests || []).filter(function (request) {
-                    const ownerId = valueFor(request, "userId", "UserId") || "";
-                    return !ownerId || ownerId === userId;
-                })
-                : (requests || []);
+            const visibleRequests = await apiRequest("/Requests/my", { method: "GET" });
 
             requestedKeys.clear();
-            for (const request of requests || []) {
+            for (const request of visibleRequests || []) {
                 const mediaType = String(valueFor(request, "mediaType", "MediaType") || "").toLowerCase();
                 const id = valueFor(request, "providerId", "ProviderId") || valueFor(request, "mediaId", "MediaId") || "";
                 if (id) {
@@ -185,7 +178,31 @@
                 detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim(), quality].filter(Boolean).join(" · ");
                 const state = document.createElement("div");
                 state.textContent = `Status: ${statusValue}`;
-                card.append(title, detail, state);
+                const actions = document.createElement("div");
+                actions.className = "requests-my-actions";
+                const cancelButton = document.createElement("button");
+                cancelButton.type = "button";
+                cancelButton.className = "raised emby-button requests-my-cancel";
+                cancelButton.textContent = "Cancel Request";
+                cancelButton.addEventListener("click", async function () {
+                    cancelButton.disabled = true;
+                    cancelButton.textContent = "Cancelling...";
+                    try {
+                        const requestId = valueFor(request, "id", "Id");
+                        await apiRequest(`/Requests/${requestId}`, { method: "DELETE" });
+                        await loadMyRequests();
+                        if (input.value.trim()) {
+                            await search(input.value.trim());
+                        }
+                    } catch (error) {
+                        cancelButton.disabled = false;
+                        cancelButton.textContent = "Cancel Request";
+                        myStatus.className = "requests-status error";
+                        myStatus.textContent = error.message || "Unable to cancel the request.";
+                    }
+                });
+                actions.append(cancelButton);
+                card.append(title, detail, state, actions);
                 list.append(card);
             });
         } catch (error) {
@@ -452,6 +469,26 @@
                 }
             });
         }
+
+        const providerId = item.providerIds && Object.keys(item.providerIds).length
+            ? Object.values(item.providerIds)[0]
+            : item.providerId;
+        const libraryQuery = new URLSearchParams({
+            title: item.name || "",
+            productionYear: item.productionYear ? String(item.productionYear) : "",
+            providerId: providerId || ""
+        });
+        apiRequest(`/Requests/library-status?${libraryQuery.toString()}`, { method: "GET" })
+            .then(function (libraryStatus) {
+                if (libraryStatus && libraryStatus.inLibrary) {
+                    requestButton.textContent = "In Library";
+                    requestButton.disabled = true;
+                    requestButton.classList.add("in-library");
+                }
+            })
+            .catch(function () {
+                // Search remains usable if library availability cannot be loaded.
+            });
 
         body.append(heading, meta, overview, requestButton);
         card.append(poster, body);

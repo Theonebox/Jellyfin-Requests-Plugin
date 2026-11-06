@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.53",
+                "changelog": "Fixes My Requests ownership and cancellation, preserves requested-media state after refresh, adds library availability detection, and restores plugin configuration page navigation.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.53/Requests_1.0.0.53.zip",
+                "checksum": "c05e362fa397a8caa418e17b2cd242ab",
+                "timestamp": "2026-11-06T22:40:05Z"
+            },
+            {
                 "version": "1.0.0.52",
                 "changelog": "Fixes requested-media state refresh, adds configurable movie and TV media quality selections, adds administrator request management columns for notes and quality, and adds General Settings quality-option controls.",
                 "targetAbi": "12.4.0",
