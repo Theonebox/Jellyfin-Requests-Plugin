@@ -17,7 +17,8 @@ public sealed class SearchController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<MetadataSearchResult>>> Search(
         [FromQuery] string query,
-        CancellationToken cancellationToken)
+        [FromQuery] string mediaType = "Movies",
+        CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -26,8 +27,16 @@ public sealed class SearchController : ControllerBase
 
         try
         {
+            var category = mediaType.Equals("TV Shows", StringComparison.OrdinalIgnoreCase)
+                || mediaType.Equals("TVShows", StringComparison.OrdinalIgnoreCase)
+                || mediaType.Equals("TV", StringComparison.OrdinalIgnoreCase)
+                ? MediaCategory.TVShows
+                : mediaType.Equals("All", StringComparison.OrdinalIgnoreCase)
+                    ? MediaCategory.All
+                    : MediaCategory.Movies;
+
             var results = await MetadataIdentify
-                .SearchAsync(query, cancellationToken)
+                .SearchAsync(query, category, cancellationToken)
                 .ConfigureAwait(false);
             return Ok(results);
         }

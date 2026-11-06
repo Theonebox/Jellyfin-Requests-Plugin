@@ -10,6 +10,7 @@
     const form = page.querySelector("#requestsSearchForm");
     const input = page.querySelector("#requestsSearchInput");
     const button = page.querySelector("#requestsSearchButton");
+    const mediaTypeSelect = page.querySelector("#requestsMediaType");
     const status = page.querySelector("#requestsStatus");
     const results = page.querySelector("#requestsResults");
     const requestedKeys = new Set();
@@ -109,6 +110,7 @@
             posterUrl: String(valueFor(item, "posterUrl", "PosterUrl") || ""),
             productionYear: valueFor(item, "productionYear", "ProductionYear") || null,
             sourceProvider: String(valueFor(item, "sourceProvider", "SourceProvider") || ""),
+            mediaCategory: String(valueFor(item, "mediaCategory", "MediaCategory") || ""),
             providerIds: providerIds
         };
     }
@@ -165,7 +167,114 @@
         return poster;
     }
 
-    async function submitRequest(item, requestButton) {
+    function closeTvModal() {
+        const modal = page.querySelector("#requestsTvModal");
+        modal.hidden = true;
+        modal.dataset.item = "";
+    }
+
+    function openTvModal(item, requestButton) {
+        const modal = page.querySelector("#requestsTvModal");
+        const seasonList = page.querySelector("#requestsSeasonList");
+        const episodeList = page.querySelector("#requestsEpisodeList");
+        const submit = page.querySelector("#requestsTvSubmit");
+
+        seasonList.replaceChildren();
+        for (let season = 1; season <= 20; season++) {
+            const label = document.createElement("label");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.className = "requests-season-checkbox";
+            checkbox.value = String(season);
+            label.append(checkbox, document.createTextNode(` Season ${season}`));
+            seasonList.append(label);
+        }
+
+        modal.dataset.item = JSON.stringify(item);
+        modal.dataset.button = "tv";
+        modal.hidden = false;
+
+        submit.onclick = async function () {
+            await submitTvRequest(item, requestButton, submit);
+        };
+    }
+
+    async function submitTvRequest(item, requestButton, submitButton) {
+        const scope = page.querySelector('input[name="requestsTvScope"]:checked').value;
+        const note = page.querySelector("#requestsTvNote").value.trim();
+        const seasonNumbers = Array.from(page.querySelectorAll(".requests-season-checkbox:checked"))
+            .map(function (checkbox) { return Number(checkbox.value); });
+        const episodeText = page.querySelector("#requestsEpisodeIds").value;
+        const episodeIds = episodeText.split(",").map(value => value.trim()).filter(Boolean);
+        const episodeNames = episodeIds.map(value => value.toUpperCase());
+
+        if (scope === "SeasonSelection" && seasonNumbers.length === 0) {
+            status.className = "requests-status error";
+            status.textContent = "Select at least one season.";
+            return;
+        }
+        if (scope === "EpisodeSelection" && episodeIds.length === 0) {
+            status.className = "requests-status error";
+            status.textContent = "Enter at least one episode ID.";
+            return;
+        }
+
+        submitButton.disabled = true;
+        submitButton.textContent = "Requesting...";
+
+        try {
+            await apiRequest("/Requests", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    mediaId: item.providerId || "",
+                    title: item.name || "",
+                    mediaType: "TV Show",
+                    overview: item.overview || "",
+                    providerId: item.providerId || "",
+                    providerIds: item.providerIds || {},
+                    productionYear: item.productionYear || null,
+                    sourceProvider: item.sourceProvider || "",
+                    mediaCategory: "TVShows",
+                    requestScope: scope,
+                    requestKind: scope === "SeasonSelection" ? "Season" : scope === "EpisodeSelection" ? "Episode" : "Series",
+                    requestedSeasonNumbers: scope === "SeasonSelection" ? seasonNumbers : [],
+                    requestedEpisodeIds: scope === "EpisodeSelection" ? episodeIds : [],
+                    requestedEpisodeNames: scope === "EpisodeSelection" ? episodeNames : [],
+                    note: note
+                })
+            });
+            requestedKeys.add(mediaKey(item));
+            closeTvModal();
+            requestButton.textContent = "✓ Requested";
+            requestButton.disabled = true;
+            requestButton.classList.add("requested");
+        } catch (error) {
+            status.className = "requests-status error";
+            status.textContent = error.message || "Unable to submit the request.";
+        } finally {
+            submitButton.disabled = false;
+            submitButton.textContent = "Submit Request";
+        }
+    }
+
+    function closeMovieModal() {
+        page.querySelector("#requestsMovieModal").hidden = true;
+        page.querySelector("#requestsMovieNote").value = "";
+    }
+
+    function openMovieModal(item, requestButton) {
+        const modal = page.querySelector("#requestsMovieModal");
+        const submit = page.querySelector("#requestsMovieSubmit");
+        page.querySelector("#requestsMovieNote").value = "";
+        modal.hidden = false;
+        submit.onclick = async function () {
+            const note = page.querySelector("#requestsMovieNote").value.trim();
+            await submitRequest(item, requestButton, note);
+        };
+    }
+
+    async function submitRequest(item, requestButton, note) {
         item = normalizeResult(item);
         if (!item.name.trim()) {
             status.className = "requests-status error";
@@ -188,13 +297,21 @@
                     providerId: item.providerId || "",
                     providerIds: item.providerIds || {},
                     productionYear: item.productionYear || null,
-                    sourceProvider: item.sourceProvider || ""
+                    sourceProvider: item.sourceProvider || "",
+                    mediaCategory: "Movies",
+                    requestScope: "EntireMovie",
+                    requestKind: "Movie",
+                    requestedSeasonNumbers: [],
+                    requestedEpisodeIds: [],
+                    requestedEpisodeNames: [],
+                    note: note || ""
                 })
             });
 
             requestedKeys.add(mediaKey(item));
             requestButton.textContent = "✓ Requested";
             requestButton.classList.add("requested");
+            closeMovieModal();
         } catch (error) {
             requestButton.disabled = false;
             requestButton.textContent = "Request";
@@ -240,7 +357,12 @@
         } else {
             requestButton.textContent = "Request";
             requestButton.addEventListener("click", function () {
-                submitRequest(item, requestButton);
+                if (String(item.mediaType || "").toLowerCase() === "tv"
+                    || String(item.mediaCategory || "").toLowerCase() === "tvshows") {
+                    openTvModal(item, requestButton);
+                } else {
+                    openMovieModal(item, requestButton);
+                }
             });
         }
 
@@ -259,7 +381,8 @@
         try {
             await loadExistingRequests();
             const encodedQuery = encodeURIComponent(query);
-            const combined = await apiRequest(`/Requests/Search?query=${encodedQuery}`, { method: "GET" });
+            const mediaType = encodeURIComponent(mediaTypeSelect.value);
+            const combined = await apiRequest(`/Requests/Search?query=${encodedQuery}&mediaType=${mediaType}`, { method: "GET" });
 
             if (combined.length === 0) {
                 status.textContent = "No results found.";
@@ -293,4 +416,17 @@
         }
         search(query);
     });
+
+    page.querySelectorAll('input[name="requestsTvScope"]').forEach(function (radio) {
+        radio.addEventListener("change", function () {
+            const seasonList = page.querySelector("#requestsSeasonList");
+            const episodeList = page.querySelector("#requestsEpisodeList");
+            seasonList.hidden = radio.value !== "SeasonSelection";
+            episodeList.hidden = radio.value !== "EpisodeSelection";
+        });
+    });
+    page.querySelector("#requestsTvCancel").addEventListener("click", closeTvModal);
+    page.querySelector(".requests-modal-backdrop").addEventListener("click", closeTvModal);
+    page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
+    page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
 })();

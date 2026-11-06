@@ -1,5 +1,5 @@
 <div id="requestsPage" data-role="page" class="page type-interior requestsPage">
-    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.47">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.50">
 
     <div class="requests-content">
         <h1 class="requests-title">Media Requests</h1>
@@ -14,6 +14,11 @@
                     placeholder="Search Movies and TV Shows"
                     required
                     is="emby-input">
+                <select id="requestsMediaType" class="requests-media-type" is="emby-select" aria-label="Media type">
+                    <option value="Movies">Movies</option>
+                    <option value="TV Shows">TV Shows</option>
+                    <option value="All">All</option>
+                </select>
                 <button id="requestsSearchButton" type="submit" class="raised button-submit emby-button">
                     Search
                 </button>
@@ -24,5 +29,41 @@
         <div id="requestsResults" class="requests-results"></div>
     </div>
 
-    <script src="/Requests/Web/requests.js?v=1.0.0.47"></script>
+    <div id="requestsTvModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsTvModalTitle">
+        <div class="requests-modal-backdrop"></div>
+        <div class="requests-modal-panel">
+            <h2 id="requestsTvModalTitle">Request TV Show</h2>
+            <div class="requests-modal-options">
+                <label><input type="radio" name="requestsTvScope" value="EntireSeries" checked> Entire Series</label>
+                <label><input type="radio" name="requestsTvScope" value="SeasonSelection"> Specific Seasons</label>
+                <div id="requestsSeasonList" class="requests-season-list" hidden></div>
+                <label><input type="radio" name="requestsTvScope" value="EpisodeSelection"> Specific Episodes</label>
+                <div id="requestsEpisodeList" class="requests-episode-list" hidden>
+                    <label for="requestsEpisodeIds">Episode IDs or codes</label>
+                    <input id="requestsEpisodeIds" type="text" is="emby-input" placeholder="S01E01, S01E02">
+                </div>
+
+                <div id="requestsMovieModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsMovieModalTitle">
+                    <div class="requests-modal-backdrop"></div>
+                    <div class="requests-modal-panel">
+                        <h2 id="requestsMovieModalTitle">Request Movie</h2>
+                        <label for="requestsMovieNote">Optional note</label>
+                        <textarea id="requestsMovieNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
+                        <div class="requests-modal-actions">
+                            <button id="requestsMovieCancel" type="button" class="raised emby-button">Cancel</button>
+                            <button id="requestsMovieSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <label for="requestsTvNote">Optional note</label>
+            <textarea id="requestsTvNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
+            <div class="requests-modal-actions">
+                <button id="requestsTvCancel" type="button" class="raised emby-button">Cancel</button>
+                <button id="requestsTvSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/Requests/Web/requests.js?v=1.0.0.50"></script>
 </div>

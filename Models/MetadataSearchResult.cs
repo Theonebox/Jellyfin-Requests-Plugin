@@ -27,4 +27,6 @@ public sealed class MetadataSearchResult
 
     [JsonPropertyName("providerIds")]
     public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public MediaCategory MediaCategory { get; set; } = MediaCategory.Movies;
 }

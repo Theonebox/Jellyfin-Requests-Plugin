@@ -5,5 +5,8 @@ public enum RequestStatus
     Pending,
     Approved,
     Denied,
-    Completed
+    InProgress,
+    Available,
+    Completed,
+    Cancelled
 }

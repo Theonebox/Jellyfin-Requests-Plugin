@@ -23,6 +23,10 @@
     min-width: 0;
 }
 
+.requests-media-type {
+    min-width: 150px;
+}
+
 .requests-status {
     min-height: 24px;
     margin: 18px 0 8px;
@@ -92,6 +96,117 @@
 
 .requests-card-button.requested {
     cursor: default;
+}
+
+.requests-modal[hidden] {
+    display: none;
+}
+
+.requests-modal {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+}
+
+.requests-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.requests-modal-panel {
+    position: relative;
+    width: min(560px, calc(100% - 32px));
+    max-height: calc(100vh - 64px);
+    overflow-y: auto;
+    margin: 32px auto;
+    padding: 20px;
+    border-radius: 6px;
+    background: #181818;
+}
+
+.requests-modal-options,
+.requests-season-list,
+.requests-episode-list,
+.requests-modal-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.requests-config-panel {
+    min-height: 420px;
+}
+
+.requests-admin-toolbar {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.requests-admin-toolbar input {
+    flex: 1;
+}
+
+.requests-admin-table-wrap {
+    overflow-x: auto;
+}
+
+.requests-admin-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.requests-admin-table th,
+.requests-admin-table td {
+    padding: 10px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.3);
+    text-align: left;
+    white-space: nowrap;
+}
+
+.requests-admin-table th {
+    cursor: pointer;
+}
+
+.requests-details-link {
+    padding: 0;
+    border: 0;
+    color: inherit;
+    background: transparent;
+    font-weight: bold;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.requests-status-select {
+    min-width: 112px;
+}
+
+.requests-modal-options {
+    flex-direction: column;
+    margin-bottom: 16px;
+}
+
+.requests-season-list {
+    flex-wrap: wrap;
+}
+
+.requests-season-list label {
+    width: calc(25% - 8px);
+}
+
+.requests-episode-list {
+    flex-direction: column;
+}
+
+.requests-note {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.requests-modal-actions {
+    justify-content: flex-end;
+    margin-top: 16px;
 }
 
 @media (max-width: 600px) {

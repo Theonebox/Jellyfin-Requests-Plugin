@@ -24,6 +24,20 @@ public sealed class MediaRequest
 
     public int? ProductionYear { get; set; }
 
+    public MediaCategory MediaCategory { get; set; } = MediaCategory.All;
+
+    public RequestScope RequestScope { get; set; } = RequestScope.EntireMovie;
+
+    public RequestKind RequestKind { get; set; } = RequestKind.Movie;
+
+    public List<int> RequestedSeasonNumbers { get; set; } = new();
+
+    public List<string> RequestedEpisodeIds { get; set; } = new();
+
+    public List<string> RequestedEpisodeNames { get; set; } = new();
+
+    public string Note { get; set; } = string.Empty;
+
     public DateTime RequestedAtUtc { get; set; }
 
     public RequestStatus Status { get; set; } = RequestStatus.Pending;

@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.Requests.Controllers;
 [Route("Requests")]
 public sealed class RequestController : ControllerBase
 {
-    private readonly RequestService _requestService;
+    private readonly IRequestService _requestService;
 
     public RequestController()
     {
@@ -54,11 +54,24 @@ public sealed class RequestController : ControllerBase
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 : new Dictionary<string, string>(model.ProviderIds, StringComparer.OrdinalIgnoreCase),
             ProductionYear = model.ProductionYear,
-            SourceProvider = model.SourceProvider?.Trim() ?? string.Empty
+            SourceProvider = model.SourceProvider?.Trim() ?? string.Empty,
+            MediaCategory = model.MediaCategory ?? InferMediaCategory(model.MediaType),
+            RequestScope = model.RequestScope ?? InferRequestScope(model.MediaCategory ?? InferMediaCategory(model.MediaType)),
+            RequestKind = model.RequestKind ?? InferRequestKind(model.RequestScope, model.MediaCategory ?? InferMediaCategory(model.MediaType)),
+            RequestedSeasonNumbers = model.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? new List<int>(),
+            RequestedEpisodeIds = model.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
+            RequestedEpisodeNames = model.RequestedEpisodeNames?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
+            Note = model.Note?.Trim() ?? string.Empty
         };
-
-        var created = _requestService.Add(request);
-        return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        try
+        {
+            var created = _requestService.Add(request);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+        catch (DuplicateRequestException exception)
+        {
+            return Conflict(new { error = exception.Message });
+        }
     }
 
     [HttpPut("{id:guid}")]
@@ -89,7 +102,14 @@ public sealed class RequestController : ControllerBase
             ProductionYear = model.ProductionYear ?? existing.ProductionYear,
             SourceProvider = model.SourceProvider ?? existing.SourceProvider,
             RequestedAtUtc = existing.RequestedAtUtc,
-            Status = model.Status ?? existing.Status
+            Status = model.Status ?? existing.Status,
+            MediaCategory = model.MediaCategory ?? existing.MediaCategory,
+            RequestScope = model.RequestScope ?? existing.RequestScope,
+            RequestKind = model.RequestKind ?? existing.RequestKind,
+            RequestedSeasonNumbers = model.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? existing.RequestedSeasonNumbers,
+            RequestedEpisodeIds = model.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? existing.RequestedEpisodeIds,
+            RequestedEpisodeNames = model.RequestedEpisodeNames?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? existing.RequestedEpisodeNames,
+            Note = model.Note ?? existing.Note
         });
 
         return updated is null ? NotFound() : Ok(updated);
@@ -99,6 +119,39 @@ public sealed class RequestController : ControllerBase
     public IActionResult Delete(Guid id)
     {
         return _requestService.Delete(id) ? NoContent() : NotFound();
+    }
+
+    [HttpPut("{id:guid}/status")]
+    public ActionResult<MediaRequest> UpdateStatus(Guid id, [FromBody] UpdateStatusModel model)
+    {
+        if (model is null || !Enum.IsDefined(model.Status))
+        {
+            return BadRequest("A valid request status is required.");
+        }
+
+        var updated = _requestService.UpdateStatus(id, model.Status);
+        return updated is null ? NotFound() : Ok(updated);
+    }
+
+    [HttpPost("duplicate-check")]
+    public ActionResult<object> CheckDuplicate([FromBody] CreateRequestModel model)
+    {
+        if (model is null)
+        {
+            return BadRequest();
+        }
+
+        var candidate = new MediaRequest
+        {
+            MediaId = model.MediaId?.Trim() ?? string.Empty,
+            ProviderId = model.ProviderId?.Trim() ?? string.Empty,
+            MediaCategory = model.MediaCategory ?? InferMediaCategory(model.MediaType),
+            RequestScope = model.RequestScope ?? InferRequestScope(model.MediaCategory ?? InferMediaCategory(model.MediaType)),
+            RequestedSeasonNumbers = model.RequestedSeasonNumbers?.ToList() ?? new List<int>(),
+            RequestedEpisodeIds = model.RequestedEpisodeIds?.ToList() ?? new List<string>()
+        };
+
+        return Ok(new { duplicate = _requestService.IsDuplicate(candidate) });
     }
 
     private string GetUserId()
@@ -128,6 +181,34 @@ public sealed class RequestController : ControllerBase
             ?? User.FindFirst("UserName")?.Value
             ?? string.Empty;
     }
+
+    private static MediaCategory InferMediaCategory(string? mediaType)
+    {
+        return string.Equals(mediaType, "TV Show", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "TV", StringComparison.OrdinalIgnoreCase)
+            ? MediaCategory.TVShows
+            : MediaCategory.Movies;
+    }
+
+    private static RequestScope InferRequestScope(MediaCategory category)
+    {
+        return category == MediaCategory.TVShows ? RequestScope.EntireSeries : RequestScope.EntireMovie;
+    }
+
+    private static RequestKind InferRequestKind(RequestScope? scope, MediaCategory category)
+    {
+        if (category == MediaCategory.TVShows)
+        {
+            return scope switch
+            {
+                RequestScope.SeasonSelection => RequestKind.Season,
+                RequestScope.EpisodeSelection => RequestKind.Episode,
+                _ => RequestKind.Series
+            };
+        }
+
+        return RequestKind.Movie;
+    }
 }
 
 public sealed class CreateRequestModel
@@ -155,6 +236,20 @@ public sealed class CreateRequestModel
 
     [JsonPropertyName("sourceProvider")]
     public string? SourceProvider { get; set; }
+
+    public MediaCategory? MediaCategory { get; set; }
+
+    public RequestScope? RequestScope { get; set; }
+
+    public RequestKind? RequestKind { get; set; }
+
+    public List<int>? RequestedSeasonNumbers { get; set; }
+
+    public List<string>? RequestedEpisodeIds { get; set; }
+
+    public List<string>? RequestedEpisodeNames { get; set; }
+
+    public string? Note { get; set; }
 }
 
 public sealed class UpdateRequestModel
@@ -180,4 +275,23 @@ public sealed class UpdateRequestModel
     public string? SourceProvider { get; set; }
 
     public RequestStatus? Status { get; set; }
+
+    public MediaCategory? MediaCategory { get; set; }
+
+    public RequestScope? RequestScope { get; set; }
+
+    public RequestKind? RequestKind { get; set; }
+
+    public List<int>? RequestedSeasonNumbers { get; set; }
+
+    public List<string>? RequestedEpisodeIds { get; set; }
+
+    public List<string>? RequestedEpisodeNames { get; set; }
+
+    public string? Note { get; set; }
+}
+
+public sealed class UpdateStatusModel
+{
+    public RequestStatus Status { get; set; }
 }

@@ -1,4 +1,5 @@
 <div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button">
+    <link rel="stylesheet" href="/Requests/Web/requests.css?v=1.0.0.50">
     <div data-role="content">
         <div class="content-primary">
             <h2 class="sectionTitle">Jellyfin Requests</h2>
@@ -40,8 +41,55 @@
             <div class="requests-config-panel" data-panel="requests" hidden>
                 <div class="verticalSection">
                     <h3>Requests</h3>
-                    <div class="fieldDescription">
-                        Media requests are persisted automatically in Jellyfin plugin configuration storage.
+                    <div class="requests-admin-toolbar">
+                        <input id="requestsAdminSearch" type="search" is="emby-input" placeholder="Search requests">
+                        <select id="requestsAdminStatus" is="emby-select" aria-label="Filter status">
+                            <option value="">All statuses</option>
+                            <option>Pending</option>
+                            <option>Approved</option>
+                            <option>Denied</option>
+                            <option>InProgress</option>
+                            <option>Available</option>
+                            <option>Completed</option>
+                            <option>Cancelled</option>
+                        </select>
+                    </div>
+                    <div class="requests-admin-table-wrap">
+                        <table class="requests-admin-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="requestedAtUtc">Request Date</th>
+                                    <th data-sort="userName">Requested By</th>
+                                    <th data-sort="title">Title</th>
+                                    <th data-sort="mediaType">Media Type</th>
+                                    <th data-sort="scope">Request Scope</th>
+                                    <th data-sort="status">Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="requestsAdminRows"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="requestsDetailsModal" class="requests-modal" hidden role="dialog" aria-modal="true">
+                    <div class="requests-modal-backdrop"></div>
+                    <div class="requests-modal-panel">
+                        <h3 id="requestsDetailsTitle">Request Details</h3>
+                        <dl>
+                            <dt>Requester</dt><dd id="requestsDetailsRequester"></dd>
+                            <dt>Date</dt><dd id="requestsDetailsDate"></dd>
+                            <dt>Media Type</dt><dd id="requestsDetailsMediaType"></dd>
+                            <dt>Scope</dt><dd id="requestsDetailsScope"></dd>
+                            <dt>Provider</dt><dd id="requestsDetailsProvider"></dd>
+                            <dt>Year</dt><dd id="requestsDetailsYear"></dd>
+                            <dt>Status</dt><dd id="requestsDetailsStatus"></dd>
+                            <dt>Overview</dt><dd id="requestsDetailsOverview"></dd>
+                            <dt>Note</dt><dd id="requestsDetailsNote"></dd>
+                        </dl>
+                        <div class="requests-modal-actions">
+                            <button id="requestsDetailsClose" type="button" class="raised emby-button">Close</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -51,6 +99,9 @@
     <script type="text/javascript">
         (function () {
             const page = document.querySelector("#requestsConfigPage");
+            let adminRequests = [];
+            let adminSortKey = "requestedAtUtc";
+            let adminSortDescending = true;
 
             page.querySelector("#openRequestsPage").addEventListener("click", function () {
                 window.location.hash = "#!/configurationpage?name=RequestsUser";
@@ -62,7 +113,163 @@
                     page.querySelectorAll(".requests-config-panel").forEach(function (panel) {
                         panel.hidden = panel.dataset.panel !== tab;
                     });
+                    if (tab === "requests") {
+                        loadAdminRequests();
+                    }
                 });
+            });
+
+            function requestHeaders() {
+                const headers = {};
+                const apiClient = window.ApiClient;
+                if (apiClient && typeof apiClient.accessToken === "function") {
+                    const token = apiClient.accessToken();
+                    if (token) {
+                        headers["X-Emby-Token"] = token;
+                    }
+                }
+                if (apiClient && typeof apiClient.getRequestHeaders === "function") {
+                    try {
+                        Object.assign(headers, apiClient.getRequestHeaders() || {});
+                    } catch (_) {}
+                }
+                return headers;
+            }
+
+            function valueFor(item, camelName, pascalName) {
+                return item[camelName] !== undefined ? item[camelName] : item[pascalName];
+            }
+
+            function requestScope(request) {
+                const scope = valueFor(request, "requestScope", "RequestScope");
+                if (scope === "SeasonSelection") {
+                    const seasons = valueFor(request, "requestedSeasonNumbers", "RequestedSeasonNumbers") || [];
+                    return seasons.length ? `Season${seasons.length === 1 ? "" : "s"} ${seasons.join(", ")}` : "Season Selection";
+                }
+                if (scope === "EpisodeSelection") {
+                    const episodes = valueFor(request, "requestedEpisodeIds", "RequestedEpisodeIds") || [];
+                    return episodes.length ? `Episode ${episodes.join(", ")}` : "Episode Selection";
+                }
+                return scope === "EntireSeries" ? "Entire Series" : "Entire Movie";
+            }
+
+            function escapeHtml(value) {
+                const span = document.createElement("span");
+                span.textContent = value == null ? "" : String(value);
+                return span.innerHTML;
+            }
+
+            async function loadAdminRequests() {
+                const response = await fetch("/Requests", { credentials: "same-origin", headers: requestHeaders() });
+                if (!response.ok) {
+                    throw new Error("Unable to load requests.");
+                }
+                adminRequests = await response.json();
+                renderAdminRequests();
+            }
+
+            async function setRequestStatus(id, status) {
+                const response = await fetch(`/Requests/${id}/status`, {
+                    method: "PUT",
+                    credentials: "same-origin",
+                    headers: { ...requestHeaders(), "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: status })
+                });
+                if (!response.ok) {
+                    throw new Error("Unable to update request status.");
+                }
+                await loadAdminRequests();
+            }
+
+            function showRequestDetails(request) {
+                page.querySelector("#requestsDetailsTitle").textContent = valueFor(request, "title", "Title") || "Request Details";
+                page.querySelector("#requestsDetailsRequester").textContent = valueFor(request, "userName", "UserName") || "Unknown user";
+                const date = valueFor(request, "requestedAtUtc", "RequestedAtUtc");
+                page.querySelector("#requestsDetailsDate").textContent = date ? new Date(date).toLocaleString() : "";
+                page.querySelector("#requestsDetailsMediaType").textContent = valueFor(request, "mediaType", "MediaType") || "";
+                page.querySelector("#requestsDetailsScope").textContent = requestScope(request);
+                page.querySelector("#requestsDetailsProvider").textContent = valueFor(request, "sourceProvider", "SourceProvider") || "";
+                page.querySelector("#requestsDetailsYear").textContent = valueFor(request, "productionYear", "ProductionYear") || "";
+                page.querySelector("#requestsDetailsStatus").textContent = valueFor(request, "status", "Status") || "";
+                page.querySelector("#requestsDetailsOverview").textContent = valueFor(request, "overview", "Overview") || "No overview available.";
+                page.querySelector("#requestsDetailsNote").textContent = valueFor(request, "note", "Note") || "No note.";
+                page.querySelector("#requestsDetailsModal").hidden = false;
+            }
+
+            function renderAdminRequests() {
+                const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
+                const statusFilter = page.querySelector("#requestsAdminStatus").value;
+                const rows = page.querySelector("#requestsAdminRows");
+                rows.replaceChildren();
+
+                const filtered = adminRequests.filter(function (request) {
+                    const title = String(valueFor(request, "title", "Title") || "").toLowerCase();
+                    const requester = String(valueFor(request, "userName", "UserName") || "").toLowerCase();
+                    const status = String(valueFor(request, "status", "Status") || "");
+                    return (!query || title.includes(query) || requester.includes(query))
+                        && (!statusFilter || status === statusFilter);
+                });
+
+                filtered.sort(function (left, right) {
+                    const leftValue = adminSortKey === "scope"
+                        ? requestScope(left)
+                        : valueFor(left, adminSortKey, adminSortKey.charAt(0).toUpperCase() + adminSortKey.slice(1));
+                    const rightValue = adminSortKey === "scope"
+                        ? requestScope(right)
+                        : valueFor(right, adminSortKey, adminSortKey.charAt(0).toUpperCase() + adminSortKey.slice(1));
+                    const comparison = String(leftValue == null ? "" : leftValue).localeCompare(String(rightValue == null ? "" : rightValue));
+                    return adminSortDescending ? -comparison : comparison;
+                });
+
+                filtered.forEach(function (request) {
+                    const id = valueFor(request, "id", "Id");
+                    const tr = document.createElement("tr");
+                    const date = valueFor(request, "requestedAtUtc", "RequestedAtUtc");
+                    const status = valueFor(request, "status", "Status");
+                    tr.innerHTML =
+                        `<td>${escapeHtml(date ? new Date(date).toLocaleString() : "")}</td>` +
+                        `<td>${escapeHtml(valueFor(request, "userName", "UserName") || "Unknown")}</td>` +
+                        `<td><button type="button" class="requests-details-link" data-action="details">${escapeHtml(valueFor(request, "title", "Title") || "")}</button></td>` +
+                        `<td>${escapeHtml(valueFor(request, "mediaType", "MediaType") || "")}</td>` +
+                        `<td>${escapeHtml(requestScope(request))}</td>` +
+                        `<td><select class="requests-status-select" data-action="status">${["Pending","Approved","Denied","InProgress","Available","Completed","Cancelled"].map(function (item) {
+                            return `<option${item === status ? " selected" : ""}>${item}</option>`;
+                        }).join("")}</select></td>` +
+                        `<td><button type="button" class="raised emby-button" data-action="approve">Approve</button> ` +
+                        `<button type="button" class="raised emby-button" data-action="deny">Deny</button></td>`;
+                    tr.querySelector('[data-action="details"]').addEventListener("click", function () { showRequestDetails(request); });
+                    tr.querySelector('[data-action="status"]').addEventListener("change", function (event) {
+                        setRequestStatus(id, event.target.value).catch(function (error) { window.alert(error.message); });
+                    });
+                    tr.querySelector('[data-action="approve"]').addEventListener("click", function () {
+                        setRequestStatus(id, "Approved").catch(function (error) { window.alert(error.message); });
+                    });
+                    tr.querySelector('[data-action="deny"]').addEventListener("click", function () {
+                        setRequestStatus(id, "Denied").catch(function (error) { window.alert(error.message); });
+                    });
+                    rows.append(tr);
+                });
+            }
+
+            page.querySelector("#requestsAdminSearch").addEventListener("input", renderAdminRequests);
+            page.querySelector("#requestsAdminStatus").addEventListener("change", renderAdminRequests);
+            page.querySelectorAll(".requests-admin-table th[data-sort]").forEach(function (heading) {
+                heading.addEventListener("click", function () {
+                    const key = heading.dataset.sort;
+                    if (adminSortKey === key) {
+                        adminSortDescending = !adminSortDescending;
+                    } else {
+                        adminSortKey = key;
+                        adminSortDescending = true;
+                    }
+                    renderAdminRequests();
+                });
+            });
+            page.querySelector("#requestsDetailsClose").addEventListener("click", function () {
+                page.querySelector("#requestsDetailsModal").hidden = true;
+            });
+            page.querySelector("#requestsDetailsModal .requests-modal-backdrop").addEventListener("click", function () {
+                page.querySelector("#requestsDetailsModal").hidden = true;
             });
 
             page.addEventListener("viewshow", function () {

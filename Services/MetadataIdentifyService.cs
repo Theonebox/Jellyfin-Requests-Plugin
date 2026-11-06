@@ -17,6 +17,7 @@ public sealed class MetadataIdentifyService
 
     public async Task<IReadOnlyList<MetadataSearchResult>> SearchAsync(
         string query,
+        MediaCategory category = MediaCategory.All,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -24,25 +25,38 @@ public sealed class MetadataIdentifyService
             return Array.Empty<MetadataSearchResult>();
         }
 
-        var movieTask = _providerManager.GetRemoteSearchResults<Movie, MovieInfo>(
+        var searchMovies = category is MediaCategory.All or MediaCategory.Movies;
+        var searchTv = category is MediaCategory.All or MediaCategory.TVShows;
+
+        Task<IEnumerable<RemoteSearchResult>> movieTask = searchMovies
+            ? _providerManager.GetRemoteSearchResults<Movie, MovieInfo>(
             new RemoteSearchQuery<MovieInfo>
             {
                 SearchInfo = new MovieInfo { Name = query.Trim() }
             },
-            cancellationToken);
+            cancellationToken)
+            : Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
 
-        var tvTask = _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(
+        Task<IEnumerable<RemoteSearchResult>> tvTask = searchTv
+            ? _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(
             new RemoteSearchQuery<SeriesInfo>
             {
                 SearchInfo = new SeriesInfo { Name = query.Trim() }
             },
-            cancellationToken);
+            cancellationToken)
+            : Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
 
         await Task.WhenAll(movieTask, tvTask).ConfigureAwait(false);
 
         var results = new List<MetadataSearchResult>();
-        AppendResults(results, movieTask.Result, "Movie");
-        AppendResults(results, tvTask.Result, "TV");
+        if (searchMovies)
+        {
+            AppendResults(results, movieTask.Result, "Movie", MediaCategory.Movies);
+        }
+        if (searchTv)
+        {
+            AppendResults(results, tvTask.Result, "TV", MediaCategory.TVShows);
+        }
 
         return results
             .GroupBy(result => $"{result.MediaType}:{result.ProviderId}:{result.Name}:{result.ProductionYear}")
@@ -64,7 +78,8 @@ public sealed class MetadataIdentifyService
     private static void AppendResults(
         ICollection<MetadataSearchResult> destination,
         IEnumerable<RemoteSearchResult> results,
-        string mediaType)
+        string mediaType,
+        MediaCategory category)
     {
         foreach (var result in results)
         {
@@ -84,7 +99,8 @@ public sealed class MetadataIdentifyService
                 PosterUrl = result.ImageUrl ?? string.Empty,
                 ProductionYear = result.ProductionYear,
                 SourceProvider = result.SearchProviderName ?? string.Empty,
-                ProviderIds = new Dictionary<string, string>(providerIds, StringComparer.OrdinalIgnoreCase)
+                ProviderIds = new Dictionary<string, string>(providerIds, StringComparer.OrdinalIgnoreCase),
+                MediaCategory = category
             });
         }
     }
