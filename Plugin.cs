@@ -40,7 +40,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = "RequestsUser",
                 DisplayName = "Media Requests",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html"
+                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html",
+                EnableInMainMenu = true,
+                MenuSection = "server",
+                MenuIcon = "how_to_vote"
             }
         };
     }

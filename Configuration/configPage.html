@@ -8,6 +8,9 @@
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="search">Search</button>
                     <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
+                    <button type="button" class="raised button-submit emby-button" id="openRequestsPage">
+                        Open Media Requests
+                    </button>
                 </div>
             </div>
 
@@ -48,6 +51,10 @@
     <script type="text/javascript">
         (function () {
             const page = document.querySelector("#requestsConfigPage");
+
+            page.querySelector("#openRequestsPage").addEventListener("click", function () {
+                window.location.hash = "#!/configurationpage?name=RequestsUser";
+            });
 
             page.querySelectorAll(".requests-config-tab").forEach(function (button) {
                 button.addEventListener("click", function () {
