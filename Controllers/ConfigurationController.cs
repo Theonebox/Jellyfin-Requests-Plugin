@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.Requests.Controllers;
 
 [ApiController]
-[AllowAnonymous]
+[Authorize]
 [Route("Requests/Configuration")]
 public sealed class ConfigurationController : ControllerBase
 {
@@ -59,6 +59,33 @@ public sealed class ConfigurationController : ControllerBase
         Plugin.Instance.Configuration.MediaQualityOptions = options;
         Plugin.Instance.SaveConfiguration();
         return Ok(new { options });
+    }
+
+    [HttpGet("Diagnostics")]
+    public ActionResult<object> GetDiagnostics()
+    {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
+        var service = Plugin.Requests;
+        if (service is null)
+        {
+            return StatusCode(500, new { error = "Request service is unavailable." });
+        }
+
+        var requests = service.GetAll();
+        return Ok(new
+        {
+            totalRequests = requests.Count,
+            pendingRequests = requests.Count(request => request.Status == Models.RequestStatus.Pending),
+            approvedRequests = requests.Count(request => request.Status == Models.RequestStatus.Approved),
+            availableRequests = requests.Count(request => request.Status == Models.RequestStatus.Available),
+            pluginVersion = Plugin.Instance?.Version?.ToString() ?? "Unknown",
+            storageFilePath = service.StorageFilePath,
+            lastSaveTimestampUtc = service.LastSaveTimestampUtc
+        });
     }
 
     private bool IsAdministrator()

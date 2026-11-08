@@ -48,15 +48,19 @@
             headers["X-Emby-Token"] = token;
         }
 
-        if (!headers.Authorization && apiClient && typeof apiClient.authorizationHeader === "function") {
+        if (!headers["X-Emby-Authorization"] && apiClient && typeof apiClient.authorizationHeader === "function") {
             try {
                 const authorization = apiClient.authorizationHeader();
                 if (authorization) {
-                    headers.Authorization = authorization;
+                    headers["X-Emby-Authorization"] = authorization;
                 }
             } catch (_) {
-                // The X-Emby-Token header remains the fallback.
+                // The token header remains the fallback.
             }
+        }
+
+        if (headers["X-Emby-Authorization"] && !headers.Authorization) {
+            headers.Authorization = headers["X-Emby-Authorization"];
         }
 
         return headers;
@@ -168,6 +172,15 @@
             visibleRequests.forEach(function (request) {
                 const card = document.createElement("article");
                 card.className = "requests-my-card";
+                const posterUrl = valueFor(request, "posterUrl", "PosterUrl") || "";
+                if (posterUrl) {
+                    const poster = document.createElement("img");
+                    poster.className = "requests-card-poster";
+                    poster.src = posterUrl;
+                    poster.alt = valueFor(request, "title", "Title") || "Requested media";
+                    poster.loading = "lazy";
+                    card.append(poster);
+                }
                 const title = document.createElement("h3");
                 title.textContent = valueFor(request, "title", "Title") || "Untitled";
                 const mediaType = valueFor(request, "mediaType", "MediaType") || "";

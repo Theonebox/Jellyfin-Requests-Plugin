@@ -14,6 +14,8 @@ public sealed class RequestService : IRequestService
         Converters = { new JsonStringEnumConverter() }
     };
     private readonly List<MediaRequest> _requests;
+    public string StorageFilePath => _filePath;
+    public DateTime? LastSaveTimestampUtc { get; private set; }
 
     public RequestService(string pluginConfigurationPath)
     {
@@ -21,6 +23,10 @@ public sealed class RequestService : IRequestService
         Directory.CreateDirectory(requestsDirectory);
         _filePath = Path.Combine(requestsDirectory, "requests.json");
         _requests = Load();
+        if (File.Exists(_filePath))
+        {
+            LastSaveTimestampUtc = File.GetLastWriteTimeUtc(_filePath);
+        }
     }
 
     public IReadOnlyList<MediaRequest> GetAll()
@@ -58,6 +64,10 @@ public sealed class RequestService : IRequestService
             request.Id = Guid.NewGuid();
             request.RequestedAtUtc = DateTime.UtcNow;
             request.Status = RequestStatus.Pending;
+            request.StatusHistory = new List<RequestStatusChange>
+            {
+                new() { Status = RequestStatus.Pending, ChangedAtUtc = request.RequestedAtUtc }
+            };
             _requests.Add(Clone(request));
             Save();
             return Clone(request);
@@ -98,6 +108,15 @@ public sealed class RequestService : IRequestService
             request.Note = update.Note?.Trim() ?? request.Note;
             request.MediaQuality = string.IsNullOrWhiteSpace(update.MediaQuality) ? request.MediaQuality : update.MediaQuality.Trim();
             request.Status = update.Status;
+            if (request.StatusHistory.Count == 0
+                || request.StatusHistory[^1].Status != request.Status)
+            {
+                request.StatusHistory.Add(new RequestStatusChange
+                {
+                    Status = request.Status,
+                    ChangedAtUtc = DateTime.UtcNow
+                });
+            }
             Save();
             return Clone(request);
         }
@@ -114,6 +133,15 @@ public sealed class RequestService : IRequestService
             }
 
             request.Status = status;
+            if (request.StatusHistory.Count == 0
+                || request.StatusHistory[^1].Status != status)
+            {
+                request.StatusHistory.Add(new RequestStatusChange
+                {
+                    Status = status,
+                    ChangedAtUtc = DateTime.UtcNow
+                });
+            }
             Save();
             return Clone(request);
         }
@@ -181,6 +209,7 @@ public sealed class RequestService : IRequestService
         var json = JsonSerializer.Serialize(_requests, _jsonOptions);
         File.WriteAllText(tempPath, json);
         File.Move(tempPath, _filePath, true);
+        LastSaveTimestampUtc = DateTime.UtcNow;
     }
 
     private static MediaRequest Clone(MediaRequest request)
@@ -211,7 +240,12 @@ public sealed class RequestService : IRequestService
             RequestedEpisodeIds = request.RequestedEpisodeIds?.ToList() ?? new List<string>(),
             RequestedEpisodeNames = request.RequestedEpisodeNames?.ToList() ?? new List<string>(),
             Note = request.Note ?? string.Empty,
-            MediaQuality = request.MediaQuality?.Trim() ?? string.Empty
+            MediaQuality = request.MediaQuality?.Trim() ?? string.Empty,
+            StatusHistory = request.StatusHistory?.Select(change => new RequestStatusChange
+            {
+                Status = change.Status,
+                ChangedAtUtc = change.ChangedAtUtc
+            }).ToList() ?? new List<RequestStatusChange>()
         };
     }
 
@@ -286,6 +320,15 @@ public sealed class RequestService : IRequestService
                 pair => pair.Value.Trim(),
                 StringComparer.OrdinalIgnoreCase)
             ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        request.StatusHistory ??= new List<RequestStatusChange>();
+        if (request.StatusHistory.Count == 0 && request.RequestedAtUtc != default)
+        {
+            request.StatusHistory.Add(new RequestStatusChange
+            {
+                Status = request.Status,
+                ChangedAtUtc = request.RequestedAtUtc
+            });
+        }
 
         if (request.RequestedAtUtc == default && request.RequestDate != default)
         {

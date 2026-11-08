@@ -51,4 +51,6 @@ public sealed class MediaRequest
     }
 
     public RequestStatus Status { get; set; } = RequestStatus.Pending;
+
+    public List<RequestStatusChange> StatusHistory { get; set; } = new();
 }

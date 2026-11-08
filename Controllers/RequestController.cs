@@ -9,7 +9,7 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.Requests.Controllers;
 
 [ApiController]
-[AllowAnonymous]
+[Authorize]
 [Route("Requests")]
 public sealed class RequestController : ControllerBase
 {

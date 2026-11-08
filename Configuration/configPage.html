@@ -2,225 +2,275 @@
     <div data-role="content">
         <div class="content-primary">
             <h2 class="sectionTitle">Jellyfin Requests</h2>
-
-            <div class="verticalSection">
-                <div class="buttonGroup">
-                    <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
-                    <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
-                </div>
+            <div class="buttonGroup">
+                <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
+                <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
+                <button type="button" class="raised emby-button requests-config-tab" data-tab="diagnostics">Diagnostics</button>
             </div>
 
-            <div class="verticalSection requests-config-panel" data-panel="general">
+            <section class="verticalSection requests-config-panel" data-panel="general">
                 <h3>General</h3>
-                <div class="fieldDescription">Configure the media quality choices shown to requesters.</div>
+                <div class="fieldDescription">Plugin configuration and provider health.</div>
+                <dl>
+                    <dt>Plugin Version</dt>
+                    <dd id="requestsGeneralVersion">Loading...</dd>
+                    <dt>Search Provider Status</dt>
+                    <dd id="requestsGeneralProviderStatus">Loading...</dd>
+                </dl>
                 <div class="inputContainer">
-                    <label class="inputLabel" for="requestsQualityNewOption">Add Quality Option</label>
+                    <label class="inputLabel" for="requestsQualityNewOption">Media Quality Option</label>
                     <input id="requestsQualityNewOption" type="text" is="emby-input">
                 </div>
                 <button type="button" class="raised button-submit emby-button" id="requestsQualityAdd">Add Option</button>
-                <div class="verticalSection">
-                    <div id="requestsQualityOptions"></div>
-                </div>
-            </div>
+                <div id="requestsQualityOptions" class="verticalSection"></div>
+            </section>
 
-            <div class="verticalSection requests-config-panel" data-panel="requests" hidden>
+            <section class="verticalSection requests-config-panel" data-panel="requests" hidden>
                 <h3>Requests</h3>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="requestsAdminSearch">Search</label>
-                    <input id="requestsAdminSearch" type="search" is="emby-input">
-                </div>
-                <div class="selectContainer">
-                    <label class="selectLabel" for="requestsAdminStatus">Status</label>
-                    <select id="requestsAdminStatus" is="emby-select">
+                <div class="requests-admin-toolbar">
+                    <input id="requestsAdminSearch" type="search" is="emby-input" placeholder="Search title, requester, notes, or provider">
+                    <select id="requestsAdminStatus" is="emby-select" aria-label="Status filter">
                         <option value="">All statuses</option>
-                        <option>Pending</option>
-                        <option>Approved</option>
-                        <option>Denied</option>
-                        <option>InProgress</option>
-                        <option>Available</option>
-                        <option>Completed</option>
-                        <option>Cancelled</option>
+                        <option>Pending</option><option>Approved</option><option>Denied</option>
+                        <option>InProgress</option><option>Available</option><option>Completed</option><option>Cancelled</option>
                     </select>
+                    <select id="requestsAdminMediaType" is="emby-select" aria-label="Media type filter">
+                        <option value="">All media types</option><option>Movie</option><option>TV Show</option>
+                    </select>
+                    <input id="requestsAdminRequester" type="search" is="emby-input" placeholder="Requester">
+                    <input id="requestsAdminDate" type="date" is="emby-input" aria-label="Request date">
+                    <select id="requestsAdminSort" is="emby-select" aria-label="Sort requests">
+                        <option value="date">Request Date</option><option value="title">Title</option>
+                        <option value="requester">Requester</option><option value="status">Status</option>
+                    </select>
+                    <button id="requestsAdminSortDirection" type="button" class="raised emby-button">Descending</button>
                 </div>
                 <table class="tblSettings">
-                    <thead>
-                        <tr>
-                            <th>Poster</th>
-                            <th>Title</th>
-                            <th>Media Type</th>
-                            <th>Request Scope</th>
-                            <th>Status</th>
-                            <th>Requester</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
+                    <thead><tr>
+                        <th>Poster</th><th>Title</th><th>Requested By</th><th>UserId</th>
+                        <th>Request Date</th><th>Status</th><th>Media Type</th><th>Actions</th>
+                    </tr></thead>
                     <tbody id="requestsAdminRows"></tbody>
                 </table>
-            </div>
+            </section>
+
+            <section class="verticalSection requests-config-panel" data-panel="diagnostics" hidden>
+                <h3>Diagnostics</h3>
+                <dl>
+                    <dt>Total Requests</dt><dd id="requestsDiagnosticTotal">Loading...</dd>
+                    <dt>Pending Requests</dt><dd id="requestsDiagnosticPending">Loading...</dd>
+                    <dt>Approved Requests</dt><dd id="requestsDiagnosticApproved">Loading...</dd>
+                    <dt>Available Requests</dt><dd id="requestsDiagnosticAvailable">Loading...</dd>
+                    <dt>Plugin Version</dt><dd id="requestsDiagnosticVersion">Loading...</dd>
+                    <dt>Storage File Location</dt><dd id="requestsDiagnosticPath">Loading...</dd>
+                    <dt>Last Save Timestamp</dt><dd id="requestsDiagnosticSave">Loading...</dd>
+                </dl>
+            </section>
+        </div>
+    </div>
+
+    <div id="requestsAdminDetails" class="requests-modal" hidden role="dialog" aria-modal="true">
+        <div class="requests-modal-backdrop"></div>
+        <div class="requests-modal-panel">
+            <h3 id="requestsDetailsTitle">Request Details</h3>
+            <img id="requestsDetailsPoster" class="requests-card-poster" alt="" hidden>
+            <dl id="requestsDetailsList"></dl>
+            <button id="requestsDetailsClose" type="button" class="raised emby-button">Close</button>
         </div>
     </div>
 
     <script type="text/javascript">
         (function () {
             const page = document.querySelector("#requestsConfigPage");
+            let requests = [];
             let qualityOptions = [];
-            let adminRequests = [];
+            let descending = true;
 
-            function escapeHtml(value) {
-                return String(value == null ? "" : value)
-                    .replace(/&/g, "&amp;")
-                    .replace(/</g, "&lt;")
-                    .replace(/>/g, "&gt;")
-                    .replace(/"/g, "&quot;");
-            }
-
-            function valueFor(request, key, upperKey) {
-                return request[key] !== undefined ? request[key] : request[upperKey];
-            }
-
-            function scopeFor(request) {
-                const scope = valueFor(request, "requestScope", "RequestScope");
-                if (scope === "SeasonSelection") {
-                    const seasons = valueFor(request, "requestedSeasonNumbers", "RequestedSeasonNumbers") || [];
-                    return seasons.length ? "Seasons " + seasons.join(", ") : "Season Selection";
+            function headers() {
+                const api = window.ApiClient;
+                const result = api && typeof api.getRequestHeaders === "function" ? api.getRequestHeaders() || {} : {};
+                if (api && typeof api.authorizationHeader === "function" && !result["X-Emby-Authorization"]) {
+                    result["X-Emby-Authorization"] = api.authorizationHeader();
                 }
-                if (scope === "EpisodeSelection") return "Episode Selection";
-                return scope === "EntireMovie" ? "Entire Movie" : "Entire Series";
+                return result;
             }
 
-            function setTab(tabName) {
-                page.querySelectorAll("[data-panel]").forEach(function (panel) {
-                    panel.hidden = panel.dataset.panel !== tabName;
+            async function get(url) {
+                const response = await fetch(url, { credentials: "same-origin", headers: headers() });
+                if (!response.ok) throw new Error("Unable to load administrator data.");
+                return response.json();
+            }
+
+            async function ensureAdministrator() {
+                const user = await get("/Users/Me");
+                return !!(user.Policy && user.Policy.IsAdministrator);
+            }
+
+            async function send(url, method, body) {
+                const response = await fetch(url, {
+                    method: method, credentials: "same-origin",
+                    headers: { ...headers(), "Content-Type": "application/json" },
+                    body: body === undefined ? undefined : JSON.stringify(body)
                 });
-                if (tabName === "requests") loadAdminRequests();
+                if (!response.ok) throw new Error("Unable to update request.");
+                return response.status === 204 ? null : response.json();
             }
 
-            page.querySelectorAll(".requests-config-tab").forEach(function (button) {
-                button.addEventListener("click", function () { setTab(button.dataset.tab); });
-            });
+            function value(item, name) {
+                const upper = name.charAt(0).toUpperCase() + name.slice(1);
+                return item[name] !== undefined ? item[name] : item[upper];
+            }
 
-            async function loadQualityOptions() {
-                const response = await fetch("/Requests/Configuration/QualityOptions", { credentials: "same-origin" });
-                if (!response.ok) throw new Error("Unable to load quality options.");
-                const data = await response.json();
-                qualityOptions = data.options || [];
-                renderQualityOptions();
+            function escape(valueToEscape) {
+                const span = document.createElement("span");
+                span.textContent = valueToEscape == null ? "" : String(valueToEscape);
+                return span.innerHTML;
+            }
+
+            function scope(request) {
+                const current = value(request, "requestScope");
+                if (current === "SeasonSelection") return "Seasons " + (value(request, "requestedSeasonNumbers") || []).join(", ");
+                if (current === "EpisodeSelection") return "Episodes " + (value(request, "requestedEpisodeNames") || []).join(", ");
+                return current === "EntireMovie" ? "Entire Movie" : "Entire Series";
             }
 
             function renderQualityOptions() {
-                const container = page.querySelector("#requestsQualityOptions");
-                container.replaceChildren();
+                const target = page.querySelector("#requestsQualityOptions");
+                target.replaceChildren();
                 qualityOptions.forEach(function (option, index) {
                     const row = document.createElement("div");
                     row.className = "listItem";
-                    row.innerHTML =
-                        `<span>${escapeHtml(option)}</span> ` +
-                        `<button type="button" class="raised emby-button" data-index="${index}">Delete</button>`;
-                    row.querySelector("button").addEventListener("click", async function () {
+                    row.innerHTML = `<span>${escape(option)}</span> <button type="button" class="raised emby-button">Delete</button>`;
+                    row.querySelector("button").onclick = async function () {
                         qualityOptions.splice(index, 1);
                         await saveQualityOptions();
-                        await loadQualityOptions();
-                    });
-                    container.append(row);
+                    };
+                    target.append(row);
                 });
+            }
+
+            async function loadGeneral() {
+                const options = await get("/Requests/Configuration/QualityOptions");
+                qualityOptions = options.options || [];
+                renderQualityOptions();
+                const diagnostics = await get("/Requests/Configuration/Diagnostics");
+                page.querySelector("#requestsGeneralVersion").textContent = diagnostics.pluginVersion || "Unknown";
+                try {
+                    const providers = await get("/Requests/Search/Providers");
+                    page.querySelector("#requestsGeneralProviderStatus").textContent = providers.status || "Unknown";
+                } catch (error) {
+                    page.querySelector("#requestsGeneralProviderStatus").textContent = error.message;
+                }
             }
 
             async function saveQualityOptions() {
-                const response = await fetch("/Requests/Configuration/QualityOptions", {
-                    method: "PUT",
-                    credentials: "same-origin",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ options: qualityOptions })
+                await send("/Requests/Configuration/QualityOptions", "PUT", { options: qualityOptions });
+                renderQualityOptions();
+            }
+
+            function renderDetails(request) {
+                const list = page.querySelector("#requestsDetailsList");
+                const providerIds = value(request, "providerIds") || {};
+                const history = (value(request, "statusHistory") || []).map(function (change) {
+                    return `${value(change, "status")} (${new Date(value(change, "changedAtUtc")).toLocaleString()})`;
+                }).join(" -> ");
+                list.innerHTML = [
+                    ["Overview", value(request, "overview")],
+                    ["Requester", `${value(request, "userName")} (${value(request, "userId")})`],
+                    ["Creation Date", new Date(value(request, "requestedAtUtc")).toLocaleString()],
+                    ["Media Type", value(request, "mediaType")],
+                    ["Scope", scope(request)],
+                    ["Status", value(request, "status")],
+                    ["Status History", history || "No history"],
+                    ["Provider", value(request, "sourceProvider")],
+                    ["Provider IDs", Object.entries(providerIds).map(function (pair) { return `${pair[0]}: ${pair[1]}`; }).join(", ")],
+                    ["Notes", value(request, "note")]
+                ].map(function (item) { return `<dt>${escape(item[0])}</dt><dd>${escape(item[1] || "Not specified")}</dd>`; }).join("");
+                page.querySelector("#requestsDetailsTitle").textContent = value(request, "title") || "Request Details";
+                const poster = page.querySelector("#requestsDetailsPoster");
+                poster.hidden = !value(request, "posterUrl");
+                poster.src = value(request, "posterUrl") || "";
+                poster.alt = value(request, "title") || "Requested media";
+                page.querySelector("#requestsAdminDetails").hidden = false;
+            }
+
+            function renderRequests() {
+                const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
+                const requesterQuery = page.querySelector("#requestsAdminRequester").value.trim().toLowerCase();
+                const statusFilter = page.querySelector("#requestsAdminStatus").value;
+                const mediaFilter = page.querySelector("#requestsAdminMediaType").value;
+                const dateFilter = page.querySelector("#requestsAdminDate").value;
+                const sort = page.querySelector("#requestsAdminSort").value;
+                const filtered = requests.filter(function (request) {
+                    const title = String(value(request, "title") || "").toLowerCase();
+                    const requester = String(value(request, "userName") || "").toLowerCase();
+                    const notes = String(value(request, "note") || "").toLowerCase();
+                    const provider = JSON.stringify(value(request, "providerIds") || {}).toLowerCase();
+                    const date = value(request, "requestedAtUtc") || "";
+                    return (!query || title.includes(query) || requester.includes(query) || notes.includes(query) || provider.includes(query))
+                        && (!requesterQuery || requester.includes(requesterQuery))
+                        && (!statusFilter || value(request, "status") === statusFilter)
+                        && (!mediaFilter || value(request, "mediaType") === mediaFilter)
+                        && (!dateFilter || date.startsWith(dateFilter));
+                }).sort(function (left, right) {
+                    const leftValue = sort === "date" ? value(left, "requestedAtUtc") : sort === "title" ? value(left, "title") : sort === "requester" ? value(left, "userName") : value(left, "status");
+                    const rightValue = sort === "date" ? value(right, "requestedAtUtc") : sort === "title" ? value(right, "title") : sort === "requester" ? value(right, "userName") : value(right, "status");
+                    return (String(leftValue || "").localeCompare(String(rightValue || ""))) * (descending ? -1 : 1);
                 });
-                if (!response.ok) throw new Error("Unable to save quality options.");
-            }
-
-            page.querySelector("#requestsQualityAdd").addEventListener("click", async function () {
-                const input = page.querySelector("#requestsQualityNewOption");
-                const option = input.value.trim();
-                if (!option) return;
-                if (!qualityOptions.some(function (value) { return value.toLowerCase() === option.toLowerCase(); })) {
-                    qualityOptions.push(option);
-                    await saveQualityOptions();
-                    await loadQualityOptions();
-                }
-                input.value = "";
-            });
-
-            async function loadAdminRequests() {
-                const response = await fetch("/Requests", { credentials: "same-origin" });
-                if (!response.ok) {
-                    adminRequests = [];
-                    renderAdminRequests("Administrator access is required.");
-                    return;
-                }
-                adminRequests = await response.json();
-                renderAdminRequests();
-            }
-
-            async function setRequestStatus(id, status) {
-                const response = await fetch(`/Requests/${id}/status`, {
-                    method: "PUT",
-                    credentials: "same-origin",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ status: status })
-                });
-                if (!response.ok) throw new Error("Unable to update request status.");
-                await loadAdminRequests();
-            }
-
-            function renderAdminRequests(errorMessage) {
                 const rows = page.querySelector("#requestsAdminRows");
                 rows.replaceChildren();
-                if (errorMessage) {
+                filtered.forEach(function (request) {
+                    const id = value(request, "id");
+                    const poster = value(request, "posterUrl");
                     const row = document.createElement("tr");
-                    row.innerHTML = `<td colspan="7">${escapeHtml(errorMessage)}</td>`;
-                    rows.append(row);
-                    return;
-                }
-
-                const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
-                const statusFilter = page.querySelector("#requestsAdminStatus").value;
-                adminRequests.filter(function (request) {
-                    const title = String(valueFor(request, "title", "Title") || "").toLowerCase();
-                    const requester = String(valueFor(request, "userName", "UserName") || "").toLowerCase();
-                    const status = String(valueFor(request, "status", "Status") || "");
-                    return (!query || title.includes(query) || requester.includes(query))
-                        && (!statusFilter || status === statusFilter);
-                }).forEach(function (request) {
-                    const row = document.createElement("tr");
-                    const id = valueFor(request, "id", "Id");
-                    const posterUrl = valueFor(request, "posterUrl", "PosterUrl");
-                    const status = valueFor(request, "status", "Status");
-                    row.innerHTML =
-                        `<td>${posterUrl ? `<img src="${escapeHtml(posterUrl)}" width="56" alt="">` : ""}</td>` +
-                        `<td>${escapeHtml(valueFor(request, "title", "Title") || "")}</td>` +
-                        `<td>${escapeHtml(valueFor(request, "mediaType", "MediaType") || "")}</td>` +
-                        `<td>${escapeHtml(scopeFor(request))}</td>` +
-                        `<td>${escapeHtml(status || "Pending")}</td>` +
-                        `<td>${escapeHtml(valueFor(request, "userName", "UserName") || "Unknown")}</td>` +
-                        `<td>
-                            <button type="button" class="raised emby-button" data-action="approve">Approve</button>
-                            <button type="button" class="raised emby-button" data-action="deny">Deny</button>
-                            <button type="button" class="raised emby-button" data-action="available">Mark Available</button>
-                        </td>`;
-                    ["approve", "deny", "available"].forEach(function (action) {
-                        row.querySelector(`[data-action="${action}"]`).addEventListener("click", async function () {
-                            const newStatus = action === "approve" ? "Approved" : action === "deny" ? "Denied" : "Available";
-                            try { await setRequestStatus(id, newStatus); } catch (error) { window.alert(error.message); }
-                        });
+                    row.innerHTML = `<td>${poster ? `<img src="${escape(poster)}" width="56" alt="">` : ""}</td>`
+                        + `<td><button type="button" class="raised emby-button" data-details>${escape(value(request, "title"))}</button></td>`
+                        + `<td>${escape(value(request, "userName"))}</td><td>${escape(value(request, "userId"))}</td>`
+                        + `<td>${escape(new Date(value(request, "requestedAtUtc")).toLocaleString())}</td>`
+                        + `<td>${escape(value(request, "status"))}</td><td>${escape(value(request, "mediaType"))}</td>`
+                        + `<td><button type="button" class="raised emby-button" data-status="Approved">Approve</button> <button type="button" class="raised emby-button" data-status="Denied">Deny</button> <button type="button" class="raised emby-button" data-status="InProgress">Mark In Progress</button> <button type="button" class="raised emby-button" data-status="Available">Mark Available</button> <button type="button" class="raised emby-button" data-status="Completed">Complete</button> <button type="button" class="raised emby-button" data-delete>Delete</button></td>`;
+                    row.querySelector("[data-details]").onclick = function () { renderDetails(request); };
+                    row.querySelectorAll("[data-status]").forEach(function (button) {
+                        button.onclick = async function () { await send(`/Requests/${id}/status`, "PUT", { status: button.dataset.status }); await loadRequests(); };
                     });
+                    row.querySelector("[data-delete]").onclick = async function () { await send(`/Requests/${id}`, "DELETE"); await loadRequests(); };
                     rows.append(row);
                 });
             }
 
-            page.querySelector("#requestsAdminSearch").addEventListener("input", function () { renderAdminRequests(); });
-            page.querySelector("#requestsAdminStatus").addEventListener("change", function () { renderAdminRequests(); });
+            async function loadRequests() {
+                requests = await get("/Requests");
+                renderRequests();
+                await loadDiagnostics();
+            }
 
-            loadQualityOptions().catch(function (error) {
-                window.alert(error.message || "Unable to load quality options.");
+            async function loadDiagnostics() {
+                const data = await get("/Requests/Configuration/Diagnostics");
+                const mappings = { totalRequests: "Total", pendingRequests: "Pending", approvedRequests: "Approved", availableRequests: "Available", pluginVersion: "Version", storageFilePath: "Path", lastSaveTimestampUtc: "Save" };
+                Object.keys(mappings).forEach(function (key) {
+                    const target = page.querySelector(`#requestsDiagnostic${mappings[key]}`);
+                    if (target) target.textContent = data[key] ? (key === "lastSaveTimestampUtc" ? new Date(data[key]).toLocaleString() : data[key]) : "Never";
+                });
+            }
+
+            page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
+                tab.onclick = function () {
+                    page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
+                    if (tab.dataset.tab === "requests") loadRequests().catch(function (error) { window.alert(error.message); });
+                    if (tab.dataset.tab === "diagnostics") loadDiagnostics().catch(function (error) { window.alert(error.message); });
+                };
             });
-            setTab("general");
-        })();
+            page.querySelectorAll("#requestsAdminSearch,#requestsAdminRequester,#requestsAdminDate,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) { control.oninput = renderRequests; control.onchange = renderRequests; });
+            page.querySelector("#requestsAdminSortDirection").onclick = function () { descending = !descending; this.textContent = descending ? "Descending" : "Ascending"; renderRequests(); };
+            page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
+            page.querySelector("#requestsQualityAdd").onclick = async function () { const input = page.querySelector("#requestsQualityNewOption"); if (input.value.trim()) { qualityOptions.push(input.value.trim()); input.value = ""; await saveQualityOptions(); } };
+            ensureAdministrator().then(function (isAdministrator) {
+                if (!isAdministrator) {
+                    page.innerHTML = '<div class="content-primary"><h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p></div>';
+                    return;
+                }
+                return loadGeneral();
+            }).catch(function (error) { window.alert(error.message); });
+        }());
     </script>
 </div>

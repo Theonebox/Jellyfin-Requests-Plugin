@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.55",
+                "changelog": "Adds administrator General, Requests, and Diagnostics tabs with request filtering, sorting, details, status actions, deletion, status history, and storage diagnostics.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.55/Requests_1.0.0.55.zip",
+                "checksum": "6ae0c96b95608eae5aef5a6fcb6f7a90",
+                "timestamp": "2026-11-08T06:48:00Z"
+            },
+            {
                 "version": "1.0.0.54",
                 "changelog": "Adds provider-ID-only library availability and duplicate detection, moves Requests into Jellyfin home navigation, and restricts administration to plugin settings.",
                 "targetAbi": "12.4.0",
