@@ -178,13 +178,25 @@
                 detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim(), quality].filter(Boolean).join(" · ");
                 const state = document.createElement("div");
                 state.textContent = `Status: ${statusValue}`;
+                const requesterId = valueFor(request, "userId", "UserId") || "";
+                const requesterName = valueFor(request, "userName", "UserName") || "Unknown user";
+                const requestDate = valueFor(request, "requestDate", "RequestDate")
+                    || valueFor(request, "requestedAtUtc", "RequestedAtUtc");
+                const ownership = document.createElement("div");
+                ownership.textContent = `Requester: ${requesterName} (${requesterId || "Unknown ID"})`;
+                const date = document.createElement("div");
+                date.textContent = `Request Date: ${requestDate ? new Date(requestDate).toLocaleString() : "Unknown"}`;
                 const actions = document.createElement("div");
                 actions.className = "requests-my-actions";
                 const cancelButton = document.createElement("button");
                 cancelButton.type = "button";
                 cancelButton.className = "raised emby-button requests-my-cancel";
                 cancelButton.textContent = "Cancel Request";
-                cancelButton.addEventListener("click", async function () {
+                if (statusValue !== "Pending") {
+                    cancelButton.disabled = true;
+                    cancelButton.textContent = `Cannot cancel (${statusValue})`;
+                } else {
+                    cancelButton.addEventListener("click", async function () {
                     cancelButton.disabled = true;
                     cancelButton.textContent = "Cancelling...";
                     try {
@@ -200,9 +212,10 @@
                         myStatus.className = "requests-status error";
                         myStatus.textContent = error.message || "Unable to cancel the request.";
                     }
-                });
+                    });
+                }
                 actions.append(cancelButton);
-                card.append(title, detail, state, actions);
+                card.append(title, detail, ownership, date, state, actions);
                 list.append(card);
             });
         } catch (error) {
@@ -326,6 +339,7 @@
                     title: item.name || "",
                     mediaType: "TV Show",
                     overview: item.overview || "",
+                    posterUrl: item.posterUrl || "",
                     providerId: item.providerId || "",
                     providerIds: item.providerIds || {},
                     productionYear: item.productionYear || null,
@@ -395,6 +409,7 @@
                     title: item.name || "",
                     mediaType: mediaLabel(item.mediaType),
                     overview: item.overview || "",
+                    posterUrl: item.posterUrl || "",
                     providerId: item.providerId || "",
                     providerIds: item.providerIds || {},
                     productionYear: item.productionYear || null,
@@ -470,14 +485,15 @@
             });
         }
 
-        const providerId = item.providerIds && Object.keys(item.providerIds).length
-            ? Object.values(item.providerIds)[0]
-            : item.providerId;
-        const libraryQuery = new URLSearchParams({
-            title: item.name || "",
-            productionYear: item.productionYear ? String(item.productionYear) : "",
-            providerId: providerId || ""
+        const libraryQuery = new URLSearchParams();
+        Object.values(item.providerIds || {}).forEach(function (providerId) {
+            if (providerId) {
+                libraryQuery.append("providerIds", providerId);
+            }
         });
+        if (item.providerId) {
+            libraryQuery.append("providerId", item.providerId);
+        }
         apiRequest(`/Requests/library-status?${libraryQuery.toString()}`, { method: "GET" })
             .then(function (libraryStatus) {
                 if (libraryStatus && libraryStatus.inLibrary) {

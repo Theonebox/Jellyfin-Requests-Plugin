@@ -12,6 +12,11 @@ public sealed class ConfigurationController : ControllerBase
     [HttpGet("QualityOptions")]
     public ActionResult<object> GetQualityOptions()
     {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
         var options = Plugin.Instance?.Configuration.MediaQualityOptions
             .Where(option => !string.IsNullOrWhiteSpace(option))
             .Select(option => option.Trim())

@@ -16,6 +16,8 @@ public sealed class MediaRequest
 
     public string Overview { get; set; } = string.Empty;
 
+    public string PosterUrl { get; set; } = string.Empty;
+
     public string ProviderId { get; set; } = string.Empty;
 
     public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
@@ -41,6 +43,12 @@ public sealed class MediaRequest
     public string MediaQuality { get; set; } = string.Empty;
 
     public DateTime RequestedAtUtc { get; set; }
+
+    public DateTime RequestDate
+    {
+        get => RequestedAtUtc;
+        set => RequestedAtUtc = value;
+    }
 
     public RequestStatus Status { get; set; } = RequestStatus.Pending;
 }

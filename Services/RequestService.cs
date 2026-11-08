@@ -82,6 +82,7 @@ public sealed class RequestService : IRequestService
             request.Title = string.IsNullOrWhiteSpace(update.Title) ? request.Title : update.Title.Trim();
             request.MediaType = string.IsNullOrWhiteSpace(update.MediaType) ? request.MediaType : update.MediaType.Trim();
             request.Overview = update.Overview?.Trim() ?? request.Overview;
+            request.PosterUrl = update.PosterUrl?.Trim() ?? request.PosterUrl;
             request.ProviderId = string.IsNullOrWhiteSpace(update.ProviderId) ? request.ProviderId : update.ProviderId.Trim();
             request.ProviderIds = update.ProviderIds?.Count > 0
                 ? new Dictionary<string, string>(update.ProviderIds, StringComparer.OrdinalIgnoreCase)
@@ -193,6 +194,7 @@ public sealed class RequestService : IRequestService
             Title = request.Title,
             MediaType = request.MediaType,
             Overview = request.Overview,
+            PosterUrl = request.PosterUrl,
             ProviderId = request.ProviderId,
             ProviderIds = request.ProviderIds is null
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -200,6 +202,7 @@ public sealed class RequestService : IRequestService
             SourceProvider = request.SourceProvider,
             ProductionYear = request.ProductionYear,
             RequestedAtUtc = request.RequestedAtUtc,
+            RequestDate = request.RequestedAtUtc,
             Status = request.Status,
             MediaCategory = request.MediaCategory,
             RequestScope = request.RequestScope,
@@ -216,8 +219,7 @@ public sealed class RequestService : IRequestService
     {
         foreach (var request in _requests)
         {
-            if (!string.Equals(request.MediaId, candidate.MediaId, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(request.ProviderId, candidate.ProviderId, StringComparison.OrdinalIgnoreCase))
+            if (!HasMatchingProviderId(request, candidate))
             {
                 continue;
             }
@@ -251,8 +253,49 @@ public sealed class RequestService : IRequestService
         return false;
     }
 
+    private static bool HasMatchingProviderId(MediaRequest left, MediaRequest right)
+    {
+        if (!string.IsNullOrWhiteSpace(left.ProviderId)
+            && string.Equals(left.ProviderId, right.ProviderId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (left.ProviderIds is null || right.ProviderIds is null)
+        {
+            return false;
+        }
+
+        return left.ProviderIds.Any(leftId =>
+            !string.IsNullOrWhiteSpace(leftId.Value)
+            && right.ProviderIds.Any(rightId =>
+                string.Equals(leftId.Key, rightId.Key, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(leftId.Value, rightId.Value, StringComparison.OrdinalIgnoreCase)));
+    }
+
     private static void Normalize(MediaRequest request)
     {
+        request.UserId = request.UserId?.Trim() ?? string.Empty;
+        request.UserName = request.UserName?.Trim() ?? string.Empty;
+        request.MediaId = request.MediaId?.Trim() ?? string.Empty;
+        request.ProviderId = request.ProviderId?.Trim() ?? string.Empty;
+        request.ProviderIds = request.ProviderIds?
+            .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
+            .ToDictionary(
+                pair => pair.Key.Trim(),
+                pair => pair.Value.Trim(),
+                StringComparer.OrdinalIgnoreCase)
+            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        if (request.RequestedAtUtc == default && request.RequestDate != default)
+        {
+            request.RequestedAtUtc = request.RequestDate;
+        }
+        else if (request.RequestDate == default && request.RequestedAtUtc != default)
+        {
+            request.RequestDate = request.RequestedAtUtc;
+        }
+
         if (request.MediaCategory == MediaCategory.All)
         {
             request.MediaCategory = string.Equals(request.MediaType, "TV Show", StringComparison.OrdinalIgnoreCase)

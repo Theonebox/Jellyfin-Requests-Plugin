@@ -4,6 +4,7 @@ using Jellyfin.Plugin.Requests.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json.Serialization;
+using MediaBrowser.Controller.Library;
 
 namespace Jellyfin.Plugin.Requests.Controllers;
 
@@ -13,29 +14,25 @@ namespace Jellyfin.Plugin.Requests.Controllers;
 public sealed class RequestController : ControllerBase
 {
     private readonly IRequestService _requestService;
+    private readonly IUserManager _userManager;
 
-    public RequestController()
+    public RequestController(IUserManager userManager)
     {
         _requestService = Plugin.Requests
             ?? throw new InvalidOperationException("The Requests plugin service has not been initialized.");
+        _userManager = userManager;
     }
 
     [HttpGet]
     public ActionResult<IReadOnlyList<MediaRequest>> GetAll()
     {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
         var requests = _requestService.GetAll();
-        var userId = GetUserId();
-        if (IsAdministrator())
-        {
-            return Ok(requests);
-        }
-
-        if (string.IsNullOrWhiteSpace(userId))
-        {
-            return Ok(Array.Empty<MediaRequest>());
-        }
-
-        return Ok(requests.Where(request => string.Equals(request.UserId, userId, StringComparison.OrdinalIgnoreCase)).ToList());
+        return Ok(requests);
     }
 
     [HttpGet("my")]
@@ -44,7 +41,7 @@ public sealed class RequestController : ControllerBase
         var userId = GetUserId();
         if (string.IsNullOrWhiteSpace(userId))
         {
-            return Ok(Array.Empty<MediaRequest>());
+            return Unauthorized(new { error = "Authentication is required." });
         }
 
         var requests = _requestService.GetAll()
@@ -56,8 +53,24 @@ public sealed class RequestController : ControllerBase
     [HttpGet("{id:guid}")]
     public ActionResult<MediaRequest> GetById(Guid id)
     {
+        if (!IsAdministrator() && string.IsNullOrWhiteSpace(GetUserId()))
+        {
+            return Unauthorized();
+        }
+
         var request = _requestService.GetById(id);
-        return request is null ? NotFound() : Ok(request);
+        if (request is null)
+        {
+            return NotFound();
+        }
+
+        var userId = GetUserId();
+        if (!IsAdministrator() && !string.Equals(request.UserId, userId, StringComparison.OrdinalIgnoreCase))
+        {
+            return StatusCode(403, new { error = "You can only view your own requests." });
+        }
+
+        return Ok(request);
     }
 
     [HttpPost]
@@ -68,14 +81,22 @@ public sealed class RequestController : ControllerBase
             return BadRequest("A title is required.");
         }
 
+        var userId = GetUserId();
+        var userName = GetUserName();
+        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrWhiteSpace(userName))
+        {
+            return Unauthorized(new { error = "Jellyfin authentication is required to submit a request." });
+        }
+
         var request = new MediaRequest
         {
-            UserId = GetUserId(),
-            UserName = GetUserName(),
+            UserId = userId,
+            UserName = userName,
             MediaId = model.MediaId?.Trim() ?? string.Empty,
             Title = model.Title.Trim(),
             MediaType = model.MediaType?.Trim() ?? string.Empty,
             Overview = model.Overview?.Trim() ?? string.Empty,
+            PosterUrl = model.PosterUrl?.Trim() ?? string.Empty,
             ProviderId = model.ProviderId?.Trim() ?? string.Empty,
             ProviderIds = model.ProviderIds is null
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -105,6 +126,11 @@ public sealed class RequestController : ControllerBase
     [HttpPut("{id:guid}")]
     public ActionResult<MediaRequest> Update(Guid id, [FromBody] UpdateRequestModel model)
     {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
         if (model is null)
         {
             return BadRequest();
@@ -119,12 +145,13 @@ public sealed class RequestController : ControllerBase
         var updated = _requestService.Update(new MediaRequest
         {
             Id = id,
-            UserId = model.UserId ?? existing.UserId,
-            UserName = model.UserName ?? existing.UserName,
+            UserId = existing.UserId,
+            UserName = existing.UserName,
             MediaId = model.MediaId ?? existing.MediaId,
             Title = model.Title ?? existing.Title,
             MediaType = model.MediaType ?? existing.MediaType,
             Overview = model.Overview ?? existing.Overview,
+            PosterUrl = model.PosterUrl ?? existing.PosterUrl,
             ProviderId = model.ProviderId ?? existing.ProviderId,
             ProviderIds = model.ProviderIds ?? existing.ProviderIds,
             ProductionYear = model.ProductionYear ?? existing.ProductionYear,
@@ -161,6 +188,11 @@ public sealed class RequestController : ControllerBase
             return StatusCode(403, new { error = "You can only cancel your own requests." });
         }
 
+        if (!IsAdministrator() && existing.Status != RequestStatus.Pending)
+        {
+            return StatusCode(409, new { error = "Only pending requests can be cancelled." });
+        }
+
         return _requestService.Delete(id) ? NoContent() : NotFound();
     }
 
@@ -183,15 +215,15 @@ public sealed class RequestController : ControllerBase
 
     [HttpGet("library-status")]
     public ActionResult<object> GetLibraryStatus(
-        [FromQuery] string title,
-        [FromQuery] int? productionYear,
-        [FromQuery] string providerId)
+        [FromQuery] string[]? providerIds,
+        [FromQuery] string? providerId)
     {
         var availability = Plugin.LibraryAvailability;
-        var providerIds = string.IsNullOrWhiteSpace(providerId)
-            ? Array.Empty<string>()
-            : new[] { providerId };
-        var inLibrary = availability?.IsInLibrary(title, productionYear, providerIds) ?? false;
+        var ids = (providerIds ?? Array.Empty<string>())
+            .Concat(string.IsNullOrWhiteSpace(providerId) ? Array.Empty<string>() : new[] { providerId })
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        var inLibrary = availability?.IsInLibrary(ids) ?? false;
         return Ok(new { inLibrary, status = inLibrary ? "In Library" : "" });
     }
 
@@ -207,6 +239,9 @@ public sealed class RequestController : ControllerBase
         {
             MediaId = model.MediaId?.Trim() ?? string.Empty,
             ProviderId = model.ProviderId?.Trim() ?? string.Empty,
+            ProviderIds = model.ProviderIds is null
+                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                : new Dictionary<string, string>(model.ProviderIds, StringComparer.OrdinalIgnoreCase),
             MediaCategory = model.MediaCategory ?? InferMediaCategory(model.MediaType),
             RequestScope = model.RequestScope ?? InferRequestScope(model.MediaCategory ?? InferMediaCategory(model.MediaType)),
             RequestedSeasonNumbers = model.RequestedSeasonNumbers?.ToList() ?? new List<int>(),
@@ -221,11 +256,18 @@ public sealed class RequestController : ControllerBase
         var claims = User.Claims;
         foreach (var claim in claims)
         {
-            if ((claim.Type == ClaimTypes.NameIdentifier || claim.Type == "UserId" || claim.Type == "uid")
+            if ((claim.Type == ClaimTypes.NameIdentifier || claim.Type == "UserId" || claim.Type == "uid"
+                    || claim.Type.EndsWith("/nameidentifier", StringComparison.OrdinalIgnoreCase))
                 && !string.IsNullOrWhiteSpace(claim.Value))
             {
                 return claim.Value.Trim();
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(User.Identity?.Name))
+        {
+            var user = _userManager.GetUserByName(User.Identity.Name);
+            return user?.Id.ToString() ?? string.Empty;
         }
 
         return string.Empty;
@@ -239,9 +281,22 @@ public sealed class RequestController : ControllerBase
             return name;
         }
 
-        return User.FindFirst(ClaimTypes.Name)?.Value
+        var claimName = User.FindFirst(ClaimTypes.Name)?.Value
             ?? User.FindFirst("UserName")?.Value
             ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(claimName))
+        {
+            return claimName;
+        }
+
+        var userId = GetUserId();
+        if (Guid.TryParse(userId, out var parsedUserId))
+        {
+            var user = _userManager.GetUserById(parsedUserId);
+            return user?.Username ?? string.Empty;
+        }
+
+        return string.Empty;
     }
 
     private bool IsAdministrator()
@@ -308,6 +363,9 @@ public sealed class CreateRequestModel
     [JsonPropertyName("overview")]
     public string? Overview { get; set; }
 
+    [JsonPropertyName("posterUrl")]
+    public string? PosterUrl { get; set; }
+
     [JsonPropertyName("providerId")]
     public string? ProviderId { get; set; }
 
@@ -350,6 +408,8 @@ public sealed class UpdateRequestModel
     public string? MediaType { get; set; }
 
     public string? Overview { get; set; }
+
+    public string? PosterUrl { get; set; }
 
     public string? ProviderId { get; set; }
 
