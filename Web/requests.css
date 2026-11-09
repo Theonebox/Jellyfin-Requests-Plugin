@@ -58,6 +58,30 @@
     margin-top: 12px;
 }
 
+.requests-my-status {
+    font-weight: 600;
+}
+
+.requests-status-approved {
+    color: #66bb6a;
+}
+
+.requests-status-denied {
+    color: #ef5350;
+}
+
+.requests-status-in-progress {
+    color: #ffa726;
+}
+
+.requests-status-completed {
+    color: #42a5f5;
+}
+
+.requests-status-pending {
+    color: #bdbdbd;
+}
+
 .requests-my-cancel {
     width: 100%;
 }

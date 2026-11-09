@@ -8,7 +8,6 @@
             </div>
             <section class="verticalSection requests-config-panel" data-panel="general">
                 <h3>General</h3>
-                <div class="fieldDescription">Plugin configuration and provider health.</div>
                 <dl>
                     <dt>Plugin Version</dt>
                     <dd id="requestsGeneralVersion">Loading...</dd>
@@ -17,8 +16,14 @@
                 </dl>
                 <h3 class="requests-config-section-title">Media Options</h3>
                 <div class="requests-media-options">
-                    <label><input id="requestsEnableMovies" type="checkbox"> Movies</label>
-                    <label><input id="requestsEnableTvShows" type="checkbox"> TV Shows</label>
+                    <label class="requests-media-option">
+                        <input id="requestsEnableMovies" type="checkbox">
+                        <span>Movies</span>
+                    </label>
+                    <label class="requests-media-option">
+                        <input id="requestsEnableTvShows" type="checkbox">
+                        <span>TV Shows</span>
+                    </label>
                 </div>
                 <h3 class="requests-config-section-title">Media Quality Options</h3>
                 <div id="requestsQualityOptions" class="verticalSection"></div>
@@ -37,9 +42,9 @@
                     <select id="requestsAdminMediaType" is="emby-select" aria-label="Media type filter">
                         <option value="">All media types</option><option>Movie</option><option>TV Show</option>
                     </select>
-                    <input id="requestsAdminRequester" type="search" is="emby-input" placeholder="Requester">
-                    <input id="requestsAdminDate" type="date" is="emby-input" aria-label="Request date">
-                    <select id="requestsAdminSort" is="emby-select" aria-label="Sort requests">
+                    <hr class="requests-admin-sort-divider">
+                    <label class="fieldDescription" for="requestsAdminSort">Sort by</label>
+                    <select id="requestsAdminSort" is="emby-select" aria-label="Sort by">
                         <option value="date">Request Date</option><option value="title">Title</option>
                         <option value="requester">Requester</option><option value="status">Status</option>
                     </select>
@@ -47,8 +52,8 @@
                 </div>
                 <table class="tblSettings">
                     <thead><tr>
-                        <th>Poster</th><th>Title</th><th>Requested By</th><th>UserId</th>
-                        <th>Request Date</th><th>Status</th><th>Media Type</th><th>Actions</th>
+                        <th>Poster</th><th>Title</th><th>Requested By</th>
+                        <th>Request Date</th><th>Media Quality</th><th>Notes</th><th>Status</th><th>Actions</th>
                     </tr></thead>
                     <tbody id="requestsAdminRows"></tbody>
                 </table>
@@ -69,12 +74,20 @@
 
     <style>
         .requests-config-section-title { font-size: 1.35em; margin: 1.5em 0 .75em; }
-        .requests-media-options { display: flex; gap: 2em; margin-bottom: 1em; }
+        .requests-media-options { background: rgba(255,255,255,.08); border-radius: .25em; display: flex; flex-direction: column; gap: 0; margin-bottom: 1em; padding: 1.25em 1.5em; }
+        .requests-media-option { align-items: center; display: flex; gap: .85em; min-height: 3.25em; }
+        .requests-media-option input { accent-color: #00a4dc; height: 1.75em; margin: 0; width: 1.75em; }
+        .requests-media-option span { font-size: 1.15em; }
         .requests-quality-row { align-items: center; display: flex; gap: .75em; margin: .5em 0; max-width: 42em; }
         .requests-quality-row input { flex: 1; }
         .requests-quality-delete { min-width: 2.5em; }
         .requests-quality-add { background: transparent; border: 1px solid currentColor; border-radius: .25em; color: inherit; margin-top: .75em; padding: .6em 1.5em; }
+        .requests-status-approved { color: #66bb6a; }
+        .requests-status-denied { color: #ef5350; }
+        .requests-status-in-progress { color: #ffa726; }
+        .requests-status-completed { color: #42a5f5; }
+        .requests-status-pending { color: #bdbdbd; }
     </style>
 
-        <script src="/Requests/Web/configPage.js?v=1.0.0.61"></script>
+        <script src="/Requests/Web/configPage.js?v=1.0.0.62"></script>
 </div>

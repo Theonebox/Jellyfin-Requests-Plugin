@@ -2,7 +2,8 @@
     "use strict";
 
     const buttonId = "requests-header-button";
-    const route = "#/configurationpage?name=RequestsUser";
+    const route = "#/requests";
+    const viewId = "requests-public-view";
 
     function isAuthenticated() {
         return typeof ApiClient !== "undefined"
@@ -71,6 +72,61 @@
         } else {
             header.prepend(button);
         }
+
+    }
+
+    async function showRequestsPage() {
+        if (!isAuthenticated()) {
+            return;
+        }
+
+        let view = document.getElementById(viewId);
+        if (!view) {
+            const response = await fetch("/Requests/Web/requests.html", { credentials: "same-origin" });
+            if (!response.ok) {
+                throw new Error("Unable to load Requests.");
+            }
+
+            const documentFragment = document.createRange().createContextualFragment(await response.text());
+            view = document.createElement("div");
+            view.id = viewId;
+            view.className = "page type-interior requests-public-view";
+            view.append(documentFragment);
+
+            const script = document.createElement("script");
+            script.src = "/Requests/Web/requests.js?v=1.0.0.62";
+            view.append(script);
+            (document.querySelector(".mainAnimated") || document.body).append(view);
+        }
+
+        document.querySelectorAll(".mainAnimated > .page").forEach(function (page) {
+            page.hidden = page !== view;
+        });
+        view.hidden = false;
+    }
+
+    function hideRequestsPage() {
+        const view = document.getElementById(viewId);
+        if (!view) {
+            return;
+        }
+
+        view.hidden = true;
+        document.querySelectorAll(".mainAnimated > .page").forEach(function (page) {
+            if (page !== view) {
+                page.hidden = false;
+            }
+        });
+    }
+
+    function syncRequestsPage() {
+        if (window.location.hash === route) {
+            showRequestsPage().catch(function (error) {
+                console.error("Requests page could not be loaded.", error);
+            });
+        } else {
+            hideRequestsPage();
+        }
     }
 
     function scheduleAdd() {
@@ -80,8 +136,12 @@
     function initialize() {
         addButton();
         new MutationObserver(scheduleAdd).observe(document.body, { childList: true, subtree: true });
-        window.addEventListener("hashchange", scheduleAdd);
+        window.addEventListener("hashchange", function () {
+            scheduleAdd();
+            syncRequestsPage();
+        });
         window.addEventListener("pageshow", scheduleAdd);
+        syncRequestsPage();
     }
 
     if (document.readyState === "loading") {

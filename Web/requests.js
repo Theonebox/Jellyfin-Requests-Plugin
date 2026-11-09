@@ -156,6 +156,13 @@
         return String(mediaType || "").toLowerCase() === "tv" ? "TV Show" : "Movie";
     }
 
+    function statusClass(status) {
+        return "requests-status-" + String(status || "Pending")
+            .replace(/([a-z])([A-Z])/g, "$1-$2")
+            .toLowerCase()
+            .replace(/[^a-z-]/g, "");
+    }
+
     function currentUserId() {
         const apiClient = window.ApiClient;
         if (apiClient && typeof apiClient.getCurrentUserId === "function") {
@@ -214,6 +221,7 @@
                 const detail = document.createElement("div");
                 detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim(), quality].filter(Boolean).join(" · ");
                 const state = document.createElement("div");
+                state.className = `requests-my-status ${statusClass(statusValue)}`;
                 state.textContent = `Status: ${statusValue}`;
                 const requesterId = valueFor(request, "userId", "UserId") || "";
                 const requesterName = valueFor(request, "userName", "UserName") || "Unknown user";

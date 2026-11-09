@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Jellyfin.Plugin.Requests.Controllers;
 
 [ApiController]
+[AllowAnonymous]
 [Route("Requests/Web")]
 public sealed class WebController : ControllerBase
 {
@@ -15,6 +16,7 @@ public sealed class WebController : ControllerBase
     {
         var allowedFiles = new Dictionary<string, (string Resource, string ContentType)>(StringComparer.OrdinalIgnoreCase)
         {
+            ["requests.html"] = ($"{typeof(WebController).Namespace!.Replace(".Controllers", "")}.Web.requests.html", "text/html; charset=utf-8"),
             ["requests.css"] = ($"{typeof(WebController).Namespace!.Replace(".Controllers", "")}.Web.requests.css", "text/css; charset=utf-8"),
             ["requests.js"] = ($"{typeof(WebController).Namespace!.Replace(".Controllers", "")}.Web.requests.js", "application/javascript; charset=utf-8"),
             ["configPage.js"] = ($"{typeof(WebController).Namespace!.Replace(".Controllers", "")}.Configuration.configPage.js", "application/javascript; charset=utf-8")

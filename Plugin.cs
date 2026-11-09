@@ -43,12 +43,6 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 Name = "RequestsConfiguration",
                 DisplayName = "Requests",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
-            },
-            new PluginPageInfo
-            {
-                Name = "RequestsUser",
-                DisplayName = "Requests",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html"
             }
         };
     }

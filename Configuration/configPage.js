@@ -62,6 +62,13 @@
                 return current === "EntireMovie" ? "Entire Movie" : "Entire Series";
             }
 
+            function statusClass(status) {
+                return "requests-status-" + String(status || "Pending")
+                    .replace(/([a-z])([A-Z])/g, "$1-$2")
+                    .toLowerCase()
+                    .replace(/[^a-z-]/g, "");
+            }
+
             function renderQualityOptions() {
                 const target = page.querySelector("#requestsQualityOptions");
                 target.replaceChildren();
@@ -157,10 +164,8 @@
 
             function renderRequests() {
                 const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
-                const requesterQuery = page.querySelector("#requestsAdminRequester").value.trim().toLowerCase();
                 const statusFilter = page.querySelector("#requestsAdminStatus").value;
                 const mediaFilter = page.querySelector("#requestsAdminMediaType").value;
-                const dateFilter = page.querySelector("#requestsAdminDate").value;
                 const sort = page.querySelector("#requestsAdminSort").value;
                 const filtered = requests.filter(function (request) {
                     const title = String(value(request, "title") || "").toLowerCase();
@@ -169,10 +174,8 @@
                     const provider = JSON.stringify(value(request, "providerIds") || {}).toLowerCase();
                     const date = value(request, "requestedAtUtc") || "";
                     return (!query || title.includes(query) || requester.includes(query) || notes.includes(query) || provider.includes(query))
-                        && (!requesterQuery || requester.includes(requesterQuery))
                         && (!statusFilter || value(request, "status") === statusFilter)
-                        && (!mediaFilter || value(request, "mediaType") === mediaFilter)
-                        && (!dateFilter || date.startsWith(dateFilter));
+                        && (!mediaFilter || value(request, "mediaType") === mediaFilter);
                 }).sort(function (left, right) {
                     const leftValue = sort === "date" ? value(left, "requestedAtUtc") : sort === "title" ? value(left, "title") : sort === "requester" ? value(left, "userName") : value(left, "status");
                     const rightValue = sort === "date" ? value(right, "requestedAtUtc") : sort === "title" ? value(right, "title") : sort === "requester" ? value(right, "userName") : value(right, "status");
@@ -184,17 +187,47 @@
                     const id = value(request, "id");
                     const poster = value(request, "posterUrl");
                     const row = document.createElement("tr");
+                    const status = value(request, "status") || "Pending";
+                    const quality = value(request, "mediaQuality") || "";
+                    const notes = value(request, "note") || "";
+                    const statusOptions = ["Pending", "Approved", "Denied", "InProgress", "Available", "Completed", "Cancelled"];
                     row.innerHTML = `<td>${poster ? `<img src="${escape(poster)}" width="56" alt="">` : ""}</td>`
                         + `<td><button type="button" class="raised emby-button" data-details>${escape(value(request, "title"))}</button></td>`
-                        + `<td>${escape(value(request, "userName"))}</td><td>${escape(value(request, "userId"))}</td>`
+                        + `<td>${escape(value(request, "userName"))}</td>`
                         + `<td>${escape(new Date(value(request, "requestedAtUtc")).toLocaleString())}</td>`
-                        + `<td>${escape(value(request, "status"))}</td><td>${escape(value(request, "mediaType"))}</td>`
-                        + `<td><button type="button" class="raised emby-button" data-status="Approved">Approve</button> <button type="button" class="raised emby-button" data-status="Denied">Deny</button> <button type="button" class="raised emby-button" data-status="InProgress">Mark In Progress</button> <button type="button" class="raised emby-button" data-status="Available">Mark Available</button> <button type="button" class="raised emby-button" data-status="Completed">Complete</button> <button type="button" class="raised emby-button" data-delete>Delete</button></td>`;
+                        + `<td>${escape(quality)}</td><td>${escape(notes)}</td>`
+                        + `<td><select is="emby-select" class="${statusClass(status)}" data-status aria-label="Request status">${statusOptions.map(function (option) {
+                            return `<option value="${option}"${option === status ? " selected" : ""}>${option}</option>`;
+                        }).join("")}</select></td>`
+                        + `<td><button type="button" class="raised emby-button" data-delete aria-label="Delete request" title="Delete request">X</button></td>`;
                     row.querySelector("[data-details]").onclick = function () { renderDetails(request); };
-                    row.querySelectorAll("[data-status]").forEach(function (button) {
-                        button.onclick = async function () { await send(`/Requests/${id}/status`, "PUT", { status: button.dataset.status }); await loadRequests(); };
+                    row.querySelector("[data-status]").onchange = async function (event) {
+                        const select = event.target;
+                        const previousStatus = status;
+                        select.disabled = true;
+                        try {
+                            await send(`/Requests/${id}/status`, "PUT", { status: select.value });
+                            request.status = select.value;
+                            select.className = statusClass(select.value);
+                        } catch (error) {
+                            select.value = previousStatus;
+                            window.alert(error.message);
+                        } finally {
+                            select.disabled = false;
+                        }
                     });
-                    row.querySelector("[data-delete]").onclick = async function () { await send(`/Requests/${id}`, "DELETE"); await loadRequests(); };
+                    row.querySelector("[data-delete]").onclick = async function () {
+                        const deleteButton = this;
+                        deleteButton.disabled = true;
+                        try {
+                            await send(`/Requests/${id}`, "DELETE");
+                            requests = requests.filter(function (candidate) { return value(candidate, "id") !== id; });
+                            row.remove();
+                        } catch (error) {
+                            deleteButton.disabled = false;
+                            window.alert(error.message);
+                        }
+                    };
                     rows.append(row);
                 });
             }
@@ -210,7 +243,7 @@
                     if (tab.dataset.tab === "requests") loadRequests().catch(function (error) { window.alert(error.message); });
                 };
             });
-            page.querySelectorAll("#requestsAdminSearch,#requestsAdminRequester,#requestsAdminDate,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) { control.oninput = renderRequests; control.onchange = renderRequests; });
+            page.querySelectorAll("#requestsAdminSearch,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) { control.oninput = renderRequests; control.onchange = renderRequests; });
             page.querySelector("#requestsAdminSortDirection").onclick = function () { descending = !descending; this.textContent = descending ? "Descending" : "Ascending"; renderRequests(); };
             page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
             page.querySelector("#requestsQualityAdd").onclick = async function () {
