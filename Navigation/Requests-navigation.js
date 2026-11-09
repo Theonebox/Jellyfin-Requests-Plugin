@@ -61,7 +61,7 @@
         button.className = "headerButton headerButtonRight paper-icon-button-light";
         button.title = "Requests";
         button.setAttribute("aria-label", "Requests");
-        button.innerHTML = '<span class="material-icons" aria-hidden="true">move_to_inbox</span>';
+        button.innerHTML = '<span class="material-icons" aria-hidden="true">how_to_vote</span>';
         button.addEventListener("click", function () {
             window.location.hash = route;
         });

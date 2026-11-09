@@ -59,14 +59,38 @@
             }
         }
 
-        if (headers["X-Emby-Authorization"] && !headers.Authorization) {
-            headers.Authorization = headers["X-Emby-Authorization"];
-        }
-
         return headers;
     }
 
     async function apiRequest(url, options) {
+        const apiClient = window.ApiClient;
+        if (apiClient && typeof apiClient.ajax === "function") {
+            const requestOptions = {
+                url: apiUrl(url),
+                type: options && options.method ? options.method : "GET",
+                dataType: "json"
+            };
+
+            if (options && options.body !== undefined) {
+                requestOptions.data = options.body;
+                requestOptions.contentType = options.headers && options.headers["Content-Type"]
+                    ? options.headers["Content-Type"]
+                    : "application/json";
+            }
+
+            try {
+                return await apiClient.ajax(requestOptions);
+            } catch (error) {
+                const response = error && error.responseJSON;
+                const message = response && (response.error || response.message)
+                    ? response.error || response.message
+                    : "Unable to complete the Requests operation.";
+                const statusCode = error && (error.status || error.statusCode);
+                const statusText = error && error.statusText;
+                throw new Error(`${message}${statusCode ? ` (${statusCode}${statusText ? ` ${statusText}` : ""})` : ""}`);
+            }
+        }
+
         const response = await fetch(apiUrl(url), {
             ...options,
             headers: {
