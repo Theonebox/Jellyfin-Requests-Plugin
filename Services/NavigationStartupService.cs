@@ -1,7 +1,6 @@
 using System.Reflection;
 using System.Runtime.Loader;
-using System.Text.Json;
-using Jellyfin.Plugin.Requests;
+using Newtonsoft.Json.Linq;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -32,28 +31,22 @@ public sealed class NavigationStartupService : IScheduledTask
 
         var pluginInterfaceType = fileTransformationAssembly?.GetType("Jellyfin.Plugin.FileTransformation.PluginInterface");
         var registerMethod = pluginInterfaceType?.GetMethod("RegisterTransformation");
-        var jobjectType = fileTransformationAssembly?.GetType("Newtonsoft.Json.Linq.JObject");
-        var parseMethod = jobjectType?.GetMethod("Parse", new[] { typeof(string) });
-
-        if (registerMethod is null || parseMethod is null)
+        if (registerMethod is null)
         {
             _logger.LogWarning("File Transformation is not available; Requests navigation was not registered.");
             return Task.CompletedTask;
         }
 
-        var payload = parseMethod.Invoke(null, new object[]
+        var payload = new JObject
         {
-            JsonSerializer.Serialize(new
-            {
-                id = "e1b932f4-7bc3-4f4b-8a0d-requests-navigation",
-                fileNamePattern = "index.html",
-                callbackAssembly = typeof(NavigationStartupService).Assembly.FullName,
-                callbackClass = typeof(NavigationTransformation).FullName,
-                callbackMethod = nameof(NavigationTransformation.IndexHtml)
-            })
-        });
+            ["id"] = "e1b932f4-7bc3-4f4b-8a0d-requests-navigation",
+            ["fileNamePattern"] = "index.html",
+            ["callbackAssembly"] = typeof(NavigationStartupService).Assembly.FullName,
+            ["callbackClass"] = typeof(NavigationTransformation).FullName,
+            ["callbackMethod"] = nameof(NavigationTransformation.IndexHtml)
+        };
 
-        registerMethod.Invoke(null, new[] { payload });
+        registerMethod.Invoke(null, new object?[] { payload });
         _logger.LogInformation("Registered Requests navigation transformation.");
         return Task.CompletedTask;
     }

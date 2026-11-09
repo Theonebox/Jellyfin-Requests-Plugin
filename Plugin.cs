@@ -48,10 +48,7 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             {
                 Name = "RequestsUser",
                 DisplayName = "Requests",
-                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html",
-                EnableInMainMenu = true,
-                MenuSection = "home",
-                MenuIcon = "how_to_vote"
+                EmbeddedResourcePath = $"{GetType().Namespace}.Web.requests.html"
             }
         };
     }
