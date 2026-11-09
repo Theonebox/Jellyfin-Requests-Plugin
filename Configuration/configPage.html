@@ -5,7 +5,6 @@
             <div class="buttonGroup">
                 <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
                 <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
-                <button type="button" class="raised emby-button requests-config-tab" data-tab="diagnostics">Diagnostics</button>
             </div>
 
             <section class="verticalSection requests-config-panel" data-panel="general">
@@ -17,12 +16,14 @@
                     <dt>Search Provider Status</dt>
                     <dd id="requestsGeneralProviderStatus">Loading...</dd>
                 </dl>
-                <div class="inputContainer">
-                    <label class="inputLabel" for="requestsQualityNewOption">Media Quality Option</label>
-                    <input id="requestsQualityNewOption" type="text" is="emby-input">
+                <h3 class="requests-config-section-title">Media Options</h3>
+                <div class="requests-media-options">
+                    <label><input id="requestsEnableMovies" type="checkbox"> Movies</label>
+                    <label><input id="requestsEnableTvShows" type="checkbox"> TV Shows</label>
                 </div>
-                <button type="button" class="raised button-submit emby-button" id="requestsQualityAdd">Add Option</button>
+                <h3 class="requests-config-section-title">Media Quality Options</h3>
                 <div id="requestsQualityOptions" class="verticalSection"></div>
+                <button type="button" class="requests-quality-add" id="requestsQualityAdd">Add</button>
             </section>
 
             <section class="verticalSection requests-config-panel" data-panel="requests" hidden>
@@ -54,18 +55,6 @@
                 </table>
             </section>
 
-            <section class="verticalSection requests-config-panel" data-panel="diagnostics" hidden>
-                <h3>Diagnostics</h3>
-                <dl>
-                    <dt>Total Requests</dt><dd id="requestsDiagnosticTotal">Loading...</dd>
-                    <dt>Pending Requests</dt><dd id="requestsDiagnosticPending">Loading...</dd>
-                    <dt>Approved Requests</dt><dd id="requestsDiagnosticApproved">Loading...</dd>
-                    <dt>Available Requests</dt><dd id="requestsDiagnosticAvailable">Loading...</dd>
-                    <dt>Plugin Version</dt><dd id="requestsDiagnosticVersion">Loading...</dd>
-                    <dt>Storage File Location</dt><dd id="requestsDiagnosticPath">Loading...</dd>
-                    <dt>Last Save Timestamp</dt><dd id="requestsDiagnosticSave">Loading...</dd>
-                </dl>
-            </section>
         </div>
     </div>
 
@@ -79,6 +68,15 @@
         </div>
     </div>
 
+    <style>
+        .requests-config-section-title { font-size: 1.35em; margin: 1.5em 0 .75em; }
+        .requests-media-options { display: flex; gap: 2em; margin-bottom: 1em; }
+        .requests-quality-row { align-items: center; display: flex; gap: .75em; margin: .5em 0; max-width: 42em; }
+        .requests-quality-row input { flex: 1; }
+        .requests-quality-delete { min-width: 2.5em; }
+        .requests-quality-add { background: transparent; border: 1px solid currentColor; border-radius: .25em; color: inherit; margin-top: .75em; padding: .6em 1.5em; }
+    </style>
+
     <script type="text/javascript">
         (function () {
             const page = document.querySelector("#requestsConfigPage");
@@ -88,14 +86,15 @@
 
             function headers() {
                 const api = window.ApiClient;
-                const result = api && typeof api.getRequestHeaders === "function" ? api.getRequestHeaders() || {} : {};
-                if (api && typeof api.authorizationHeader === "function" && !result["X-Emby-Authorization"]) {
-                    result["X-Emby-Authorization"] = api.authorizationHeader();
-                }
-                return result;
+                return api && typeof api.getRequestHeaders === "function"
+                    ? api.getRequestHeaders() || {}
+                    : {};
             }
 
             async function get(url) {
+                if (window.ApiClient && typeof window.ApiClient.ajax === "function") {
+                    return window.ApiClient.ajax({ url: url, type: "GET", dataType: "json" });
+                }
                 const response = await fetch(url, { credentials: "same-origin", headers: headers() });
                 if (!response.ok) throw new Error("Unable to load administrator data.");
                 return response.json();
@@ -107,6 +106,15 @@
             }
 
             async function send(url, method, body) {
+                if (window.ApiClient && typeof window.ApiClient.ajax === "function") {
+                    return window.ApiClient.ajax({
+                        url: url,
+                        type: method,
+                        dataType: "json",
+                        contentType: "application/json",
+                        data: body === undefined ? undefined : JSON.stringify(body)
+                    });
+                }
                 const response = await fetch(url, {
                     method: method, credentials: "same-origin",
                     headers: { ...headers(), "Content-Type": "application/json" },
@@ -139,22 +147,45 @@
                 target.replaceChildren();
                 qualityOptions.forEach(function (option, index) {
                     const row = document.createElement("div");
-                    row.className = "listItem";
-                    row.innerHTML = `<span>${escape(option)}</span> <button type="button" class="raised emby-button">Delete</button>`;
-                    row.querySelector("button").onclick = async function () {
+                    row.className = "requests-quality-row";
+                    const input = document.createElement("input");
+                    input.type = "text";
+                    input.value = option;
+                    input.setAttribute("is", "emby-input");
+                    input.setAttribute("aria-label", `Media quality option ${index + 1}`);
+                    const deleteButton = document.createElement("button");
+                    deleteButton.type = "button";
+                    deleteButton.className = "raised emby-button requests-quality-delete";
+                    deleteButton.textContent = "X";
+                    input.onchange = async function () {
+                        const value = input.value.trim();
+                        if (!value) {
+                            input.value = qualityOptions[index];
+                            return;
+                        }
+                        qualityOptions[index] = value;
+                        await saveQualityOptions();
+                    };
+                    deleteButton.onclick = async function () {
                         qualityOptions.splice(index, 1);
                         await saveQualityOptions();
                     };
+                    row.append(input, deleteButton);
                     target.append(row);
                 });
             }
 
             async function loadGeneral() {
-                const options = await get("/Requests/Configuration/QualityOptions");
+                const [options, diagnostics, mediaOptions] = await Promise.all([
+                    get("/Requests/Configuration/QualityOptions"),
+                    get("/Requests/Configuration/Diagnostics"),
+                    get("/Requests/Configuration/MediaOptions")
+                ]);
                 qualityOptions = options.options || [];
                 renderQualityOptions();
-                const diagnostics = await get("/Requests/Configuration/Diagnostics");
                 page.querySelector("#requestsGeneralVersion").textContent = diagnostics.pluginVersion || "Unknown";
+                page.querySelector("#requestsEnableMovies").checked = Boolean(mediaOptions.movies);
+                page.querySelector("#requestsEnableTvShows").checked = Boolean(mediaOptions.tvShows);
                 try {
                     const providers = await get("/Requests/Search/Providers");
                     page.querySelector("#requestsGeneralProviderStatus").textContent = providers.status || "Unknown";
@@ -166,6 +197,16 @@
             async function saveQualityOptions() {
                 await send("/Requests/Configuration/QualityOptions", "PUT", { options: qualityOptions });
                 renderQualityOptions();
+            }
+
+            async function saveMediaOptions() {
+                const movies = page.querySelector("#requestsEnableMovies").checked;
+                const tvShows = page.querySelector("#requestsEnableTvShows").checked;
+                if (!movies && !tvShows) {
+                    page.querySelector("#requestsEnableMovies").checked = true;
+                    throw new Error("At least one media type must remain enabled.");
+                }
+                await send("/Requests/Configuration/MediaOptions", "PUT", { movies: movies, tvShows: tvShows });
             }
 
             function renderDetails(request) {
@@ -241,29 +282,23 @@
             async function loadRequests() {
                 requests = await get("/Requests");
                 renderRequests();
-                await loadDiagnostics();
-            }
-
-            async function loadDiagnostics() {
-                const data = await get("/Requests/Configuration/Diagnostics");
-                const mappings = { totalRequests: "Total", pendingRequests: "Pending", approvedRequests: "Approved", availableRequests: "Available", pluginVersion: "Version", storageFilePath: "Path", lastSaveTimestampUtc: "Save" };
-                Object.keys(mappings).forEach(function (key) {
-                    const target = page.querySelector(`#requestsDiagnostic${mappings[key]}`);
-                    if (target) target.textContent = data[key] ? (key === "lastSaveTimestampUtc" ? new Date(data[key]).toLocaleString() : data[key]) : "Never";
-                });
             }
 
             page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
                 tab.onclick = function () {
                     page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
                     if (tab.dataset.tab === "requests") loadRequests().catch(function (error) { window.alert(error.message); });
-                    if (tab.dataset.tab === "diagnostics") loadDiagnostics().catch(function (error) { window.alert(error.message); });
                 };
             });
             page.querySelectorAll("#requestsAdminSearch,#requestsAdminRequester,#requestsAdminDate,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) { control.oninput = renderRequests; control.onchange = renderRequests; });
             page.querySelector("#requestsAdminSortDirection").onclick = function () { descending = !descending; this.textContent = descending ? "Descending" : "Ascending"; renderRequests(); };
             page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
-            page.querySelector("#requestsQualityAdd").onclick = async function () { const input = page.querySelector("#requestsQualityNewOption"); if (input.value.trim()) { qualityOptions.push(input.value.trim()); input.value = ""; await saveQualityOptions(); } };
+            page.querySelector("#requestsQualityAdd").onclick = async function () {
+                qualityOptions.push("new");
+                await saveQualityOptions();
+            };
+            page.querySelector("#requestsEnableMovies").onchange = function () { saveMediaOptions().catch(function (error) { window.alert(error.message); }); };
+            page.querySelector("#requestsEnableTvShows").onchange = function () { saveMediaOptions().catch(function (error) { window.alert(error.message); }); };
             ensureAdministrator().then(function (isAdministrator) {
                 if (!isAdministrator) {
                     page.innerHTML = '<div class="content-primary"><h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p></div>';

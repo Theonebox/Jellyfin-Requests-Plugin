@@ -290,6 +290,24 @@
         }
     }
 
+    async function loadMediaOptions() {
+        try {
+            const options = await apiRequest("/Requests/Configuration/MediaOptions", { method: "GET" });
+            mediaTypeSelect.replaceChildren();
+            if (options.movies) {
+                mediaTypeSelect.append(new Option("Movies", "Movies"));
+            }
+            if (options.tvShows) {
+                mediaTypeSelect.append(new Option("TV Shows", "TV Shows"));
+            }
+            if (options.movies && options.tvShows) {
+                mediaTypeSelect.append(new Option("All", "All"));
+            }
+        } catch (_) {
+            // Keep the default options when configuration cannot be read.
+        }
+    }
+
     function createPoster(item) {
         const poster = document.createElement("div");
         poster.className = "requests-card-poster requests-card-poster-placeholder";
@@ -607,5 +625,6 @@
     page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
     page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
     loadQualityOptions();
+    loadMediaOptions();
     loadMyRequests();
 })();

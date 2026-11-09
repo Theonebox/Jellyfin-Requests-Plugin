@@ -12,11 +12,6 @@ public sealed class ConfigurationController : ControllerBase
     [HttpGet("QualityOptions")]
     public ActionResult<object> GetQualityOptions()
     {
-        if (!IsAdministrator())
-        {
-            return StatusCode(403, new { error = "Administrator access is required." });
-        }
-
         var options = Plugin.Instance?.Configuration.MediaQualityOptions
             .Where(option => !string.IsNullOrWhiteSpace(option))
             .Select(option => option.Trim())
@@ -59,6 +54,39 @@ public sealed class ConfigurationController : ControllerBase
         Plugin.Instance.Configuration.MediaQualityOptions = options;
         Plugin.Instance.SaveConfiguration();
         return Ok(new { options });
+    }
+
+    [HttpGet("MediaOptions")]
+    public ActionResult<object> GetMediaOptions()
+    {
+        var configuration = Plugin.Instance?.Configuration;
+        return configuration is null
+            ? StatusCode(500, new { error = "Plugin configuration is unavailable." })
+            : Ok(new { movies = configuration.EnableMovies, tvShows = configuration.EnableTvShows });
+    }
+
+    [HttpPut("MediaOptions")]
+    public IActionResult UpdateMediaOptions([FromBody] MediaOptionsModel model)
+    {
+        if (!IsAdministrator())
+        {
+            return StatusCode(403, new { error = "Administrator access is required." });
+        }
+
+        if (model is null || (!model.Movies && !model.TvShows))
+        {
+            return BadRequest(new { error = "At least one media type must remain enabled." });
+        }
+
+        if (Plugin.Instance is null)
+        {
+            return StatusCode(500, new { error = "Plugin configuration is unavailable." });
+        }
+
+        Plugin.Instance.Configuration.EnableMovies = model.Movies;
+        Plugin.Instance.Configuration.EnableTvShows = model.TvShows;
+        Plugin.Instance.SaveConfiguration();
+        return Ok(new { movies = model.Movies, tvShows = model.TvShows });
     }
 
     [HttpGet("Diagnostics")]
@@ -112,4 +140,11 @@ public sealed class ConfigurationController : ControllerBase
 public sealed class QualityOptionsModel
 {
     public List<string>? Options { get; set; }
+}
+
+public sealed class MediaOptionsModel
+{
+    public bool Movies { get; set; }
+
+    public bool TvShows { get; set; }
 }

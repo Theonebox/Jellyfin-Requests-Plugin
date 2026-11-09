@@ -10,4 +10,8 @@ public class PluginConfiguration : BasePluginConfiguration
         "1080p",
         "4K"
     };
+
+    public bool EnableMovies { get; set; } = true;
+
+    public bool EnableTvShows { get; set; } = true;
 }
