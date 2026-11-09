@@ -1,101 +1,87 @@
-// Adds one authenticated navigation link while reusing Jellyfin's native link styling.
 (function () {
     "use strict";
 
-    const linkId = "requests-navigation-link";
-    const drawerLinkId = "requests-navigation-drawer-link";
+    const buttonId = "requests-header-button";
     const route = "#/configurationpage?name=RequestsUser";
 
     function isAuthenticated() {
         return typeof ApiClient !== "undefined"
-            && ((typeof ApiClient.getCurrentUserId === "function" && ApiClient.getCurrentUserId())
-                || (typeof ApiClient.accessToken === "function" && ApiClient.accessToken()));
+            && typeof ApiClient.getCurrentUserId === "function"
+            && Boolean(ApiClient.getCurrentUserId());
     }
 
-    function decorate(link, id) {
-        link.id = id;
-        link.href = route;
-        link.title = "Requests";
-        link.setAttribute("aria-label", "Requests");
-        link.removeAttribute("aria-current");
-        link.querySelectorAll("svg, .MuiButton-startIcon, .MuiListItemIcon-root").forEach(function (icon) {
-            icon.remove();
-        });
-        link.querySelectorAll(".MuiListItemText-primary, .MuiTypography-root, .navMenuOptionText").forEach(function (text) {
-            text.textContent = "Requests";
-        });
-
-        if (!link.querySelector(".requests-navigation-icon")) {
-            const icon = document.createElement("span");
-            icon.className = "material-icons requests-navigation-icon";
-            icon.setAttribute("aria-hidden", "true");
-            icon.textContent = "move_to_inbox";
-            link.insertBefore(icon, link.firstChild);
+    function getHeaderRightContainer() {
+        const legacy = document.querySelector(".headerRight:not([data-requests-fallback])");
+        if (legacy && legacy.offsetParent !== null) {
+            return legacy;
         }
 
+        const userMenu = document.querySelector('[aria-controls="app-user-menu"]');
+        const toolbar = userMenu?.closest(".MuiToolbar-root")
+            || document.querySelector(".MuiAppBar-root .MuiToolbar-root");
+        if (!toolbar) {
+            return null;
+        }
+
+        let container = userMenu;
+        while (container && container.parentElement !== toolbar) {
+            container = container.parentElement;
+        }
+
+        if (!container) {
+            container = document.createElement("div");
+            container.className = "headerRight";
+            container.dataset.requestsFallback = "true";
+            toolbar.appendChild(container);
+        }
+
+        return container;
     }
 
-    function addModernNavigation() {
-        const toolbar = document.querySelector("header.MuiAppBar-root .MuiToolbar-root");
-        const template = toolbar && toolbar.querySelector('a[href^="#/home"]');
-        const bar = template && template.parentElement;
-        if (bar && !bar.querySelector("#" + linkId)) {
-            const link = template.cloneNode(true);
-            decorate(link, linkId);
-            bar.appendChild(link);
-        }
-
-        const drawer = document.querySelector(".MuiDrawer-paper ul.MuiList-root");
-        if (drawer && !drawer.querySelector("#" + drawerLinkId)) {
-            const template = drawer.querySelector('a[href^="#/home"]');
-            if (template) {
-                const item = template.closest("li") || template.parentElement;
-                const clonedItem = item.cloneNode(true);
-                const link = clonedItem.querySelector("a");
-                decorate(link, drawerLinkId);
-                drawer.appendChild(clonedItem);
-            }
-        }
-    }
-
-    function addLegacyNavigation() {
-        const container = document.querySelector(".customMenuOptions");
-        if (!container || container.querySelector("#" + linkId)) {
-            return;
-        }
-
-        const link = document.createElement("a");
-        link.className = "navMenuOption lnkMediaFolder";
-        decorate(link, linkId);
-        link.querySelector(".requests-navigation-icon").classList.add("navMenuOptionIcon");
-        const text = document.createElement("span");
-        text.className = "navMenuOptionText";
-        text.textContent = "Requests";
-        link.appendChild(text);
-        container.appendChild(link);
-    }
-
-    function sync() {
+    function addButton() {
         if (!isAuthenticated()) {
-            document.querySelectorAll("#" + linkId + ", #" + drawerLinkId).forEach(function (link) {
-                link.remove();
-            });
+            document.getElementById(buttonId)?.remove();
             return;
         }
 
-        addModernNavigation();
-        addLegacyNavigation();
+        if (document.getElementById(buttonId)) {
+            return;
+        }
+
+        const dice = document.getElementById("randomItemButton");
+        const header = dice?.parentElement || getHeaderRightContainer();
+        if (!header) {
+            return;
+        }
+
+        const button = document.createElement("button");
+        button.id = buttonId;
+        button.type = "button";
+        button.setAttribute("is", "paper-icon-button-light");
+        button.className = "headerButton headerButtonRight paper-icon-button-light";
+        button.title = "Requests";
+        button.setAttribute("aria-label", "Requests");
+        button.innerHTML = '<span class="material-icons" aria-hidden="true">move_to_inbox</span>';
+        button.addEventListener("click", function () {
+            window.location.hash = route;
+        });
+
+        if (dice?.parentElement === header) {
+            dice.parentElement.insertBefore(button, dice.nextSibling);
+        } else {
+            header.prepend(button);
+        }
     }
 
-    function scheduleSync() {
-        window.requestAnimationFrame(sync);
+    function scheduleAdd() {
+        window.requestAnimationFrame(addButton);
     }
 
     function initialize() {
-        sync();
-        new MutationObserver(scheduleSync).observe(document.body, { childList: true, subtree: true });
-        window.addEventListener("hashchange", scheduleSync);
-        window.addEventListener("pageshow", scheduleSync);
+        addButton();
+        new MutationObserver(scheduleAdd).observe(document.body, { childList: true, subtree: true });
+        window.addEventListener("hashchange", scheduleAdd);
+        window.addEventListener("pageshow", scheduleAdd);
     }
 
     if (document.readyState === "loading") {

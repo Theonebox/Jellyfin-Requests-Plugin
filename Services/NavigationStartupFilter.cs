@@ -1,0 +1,95 @@
+using System.Text;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+
+namespace Jellyfin.Plugin.Requests.Services;
+
+public sealed class NavigationStartupFilter : IStartupFilter
+{
+    private readonly ILogger<NavigationStartupFilter> _logger;
+
+    public NavigationStartupFilter(ILogger<NavigationStartupFilter> logger)
+    {
+        _logger = logger;
+    }
+
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+    {
+        return app =>
+        {
+            app.Use(InjectNavigationScriptAsync);
+            next(app);
+        };
+    }
+
+    private async Task InjectNavigationScriptAsync(HttpContext context, Func<Task> next)
+    {
+        if (!HttpMethods.IsGet(context.Request.Method)
+            || !IsWebIndex(context.Request.Path.Value))
+        {
+            await next().ConfigureAwait(false);
+            return;
+        }
+
+        var originalBody = context.Response.Body;
+        await using var buffer = new MemoryStream();
+        context.Response.Body = buffer;
+
+        try
+        {
+            await next().ConfigureAwait(false);
+            context.Response.Body = originalBody;
+            buffer.Position = 0;
+
+            if (context.Response.StatusCode != StatusCodes.Status200OK
+                || !(context.Response.ContentType?.Contains("text/html", StringComparison.OrdinalIgnoreCase) ?? false))
+            {
+                await buffer.CopyToAsync(originalBody).ConfigureAwait(false);
+                return;
+            }
+
+            using var reader = new StreamReader(buffer, Encoding.UTF8, leaveOpen: true);
+            var html = await reader.ReadToEndAsync().ConfigureAwait(false);
+            if (!html.Contains("requests-header-button", StringComparison.Ordinal))
+            {
+                var script = ReadNavigationScript();
+                var bodyClose = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
+                if (bodyClose >= 0)
+                {
+                    html = html.Insert(bodyClose, $"<script defer>{script}</script>");
+                }
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(html);
+            context.Response.ContentType = "text/html;charset=utf-8";
+            context.Response.ContentLength = bytes.Length;
+            context.Response.Headers.Remove("ETag");
+            context.Response.Headers.Remove("Last-Modified");
+            await originalBody.WriteAsync(bytes).ConfigureAwait(false);
+        }
+        catch
+        {
+            context.Response.Body = originalBody;
+            throw;
+        }
+    }
+
+    private static string ReadNavigationScript()
+    {
+        using var stream = typeof(NavigationStartupFilter).Assembly.GetManifestResourceStream(
+            $"{typeof(Plugin).Namespace}.Navigation.Requests-navigation.js")
+            ?? throw new InvalidOperationException("The Requests navigation script resource is missing.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    private static bool IsWebIndex(string? path)
+    {
+        return !string.IsNullOrEmpty(path)
+            && (path.EndsWith("/web", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith("/web/", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith("/web/index.html", StringComparison.OrdinalIgnoreCase));
+    }
+}
