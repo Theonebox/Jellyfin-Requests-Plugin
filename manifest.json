@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.61",
+                "changelog": "Fixes administrator settings tabs and loading by serving the configuration logic as an external embedded script.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.61/Requests_1.0.0.61.zip",
+                "checksum": "d6e5e7a9bde107a2dfa6ef9e33029eac",
+                "timestamp": "2026-11-09T19:30:00Z"
+            },
+            {
                 "version": "1.0.0.60",
                 "changelog": "Fixes administrator tab navigation, removes Diagnostics, adds editable media quality options and media-type toggles, and persists settings to the public Requests controls.",
                 "targetAbi": "12.4.0",

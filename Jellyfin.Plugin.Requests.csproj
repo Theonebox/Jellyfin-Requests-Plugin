@@ -4,10 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Version>1.0.0.60</Version>
-    <AssemblyVersion>1.0.0.60</AssemblyVersion>
-    <FileVersion>1.0.0.60</FileVersion>
-    <InformationalVersion>1.0.0.60</InformationalVersion>
+    <Version>1.0.0.61</Version>
+    <AssemblyVersion>1.0.0.61</AssemblyVersion>
+    <FileVersion>1.0.0.61</FileVersion>
+    <InformationalVersion>1.0.0.61</InformationalVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +24,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Configuration\configPage.html" />
+    <EmbeddedResource Include="Configuration\configPage.js" />
     <EmbeddedResource Include="Web\requests.html" />
     <EmbeddedResource Include="Web\requests.css" />
     <EmbeddedResource Include="Web\requests.js" />
