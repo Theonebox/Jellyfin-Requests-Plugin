@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.65",
+                "changelog": "Fixes Requests header navigation and ensures the existing public Requests page opens for authenticated users.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.65/Requests_1.0.0.65.zip",
+                "checksum": "8aab974492936006018a5d630961170b",
+                "timestamp": "2026-11-10T17:50:00Z"
+            },
+            {
                 "version": "1.0.0.64",
                 "changelog": "Fixes administrator settings script loading so the General and Requests tabs, provider status, and media quality controls initialize reliably.",
                 "targetAbi": "12.4.0",

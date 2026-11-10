@@ -3,7 +3,7 @@
 
     const buttonId = "requests-header-button";
     const viewId = "requests-public-view";
-    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.64-settings-fix";
+    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.65-settings-fix";
 
     function isAuthenticated() {
         return typeof ApiClient !== "undefined"
@@ -80,10 +80,6 @@
     }
 
     async function showRequestsPage() {
-        if (!isAuthenticated()) {
-            return;
-        }
-
         let view = document.getElementById(viewId);
         if (!view) {
             const response = await fetch("/Requests/Web/requests.html", { credentials: "same-origin" });
@@ -101,11 +97,14 @@
             container.append(view);
 
             const script = document.createElement("script");
-            script.src = "/Requests/Web/requests.js?v=1.0.0.64-click-fix";
+            script.src = "/Requests/Web/requests.js?v=1.0.0.65-click-fix";
+            script.onerror = function () {
+                throw new Error("Unable to load the Requests page script.");
+            };
             view.append(script);
         }
 
-        document.querySelectorAll(".mainAnimated > .page").forEach(function (page) {
+        document.querySelectorAll(".mainAnimated > .page, body > .page").forEach(function (page) {
             page.hidden = page !== view;
         });
         view.hidden = false;
@@ -135,8 +134,7 @@
     }
 
     function loadConfigurationScript() {
-        if (window.RequestsConfigurationScriptLoaded
-            || !document.getElementById("requestsConfigPage")
+        if (!document.getElementById("requestsConfigPage")
             || document.querySelector("script[data-requests-configuration-script]")) {
             return;
         }
@@ -155,7 +153,7 @@
         new MutationObserver(function () {
             scheduleAdd();
             loadConfigurationScript();
-        }).observe(document.body, { childList: true, subtree: true });
+        }).observe(document.documentElement, { childList: true, subtree: true });
         window.addEventListener("hashchange", function () {
             scheduleAdd();
             syncRequestsPage();
@@ -163,6 +161,7 @@
         window.addEventListener("pageshow", scheduleAdd);
         syncRequestsPage();
         loadConfigurationScript();
+        window.setInterval(loadConfigurationScript, 500);
     }
 
     if (document.readyState === "loading") {
