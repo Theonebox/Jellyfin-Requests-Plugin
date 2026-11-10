@@ -44,7 +44,8 @@ public sealed class MediaRequest
 
     public DateTime RequestedAtUtc { get; set; }
 
-    public RequestStatus Status { get; set; } = RequestStatus.Pending;
+    /// <summary>The <see cref="StatusOption.Id"/> of the current status.</summary>
+    public string Status { get; set; } = string.Empty;
 
     public List<RequestStatusChange> StatusHistory { get; set; } = new();
 

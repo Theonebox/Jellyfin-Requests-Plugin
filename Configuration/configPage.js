@@ -84,16 +84,12 @@ function scopeLabel(request) {
     return current === "EntireSeries" ? "Entire Series" : "Entire Movie";
 }
 
+// Class hook for custom CSS, e.g. .requests-status-in-progress.
 function statusClass(status) {
-    return "requests-status-" + String(status || "Pending")
+    return "requests-status-" + String(status || "")
         .replace(/([a-z])([A-Z])/g, "$1-$2")
         .toLowerCase()
-        .replace(/[^a-z-]/g, "");
-}
-
-// "InProgress" -> "In Progress" for display; the API value stays unchanged.
-function statusLabel(status) {
-    return String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1 $2");
+        .replace(/[^a-z0-9-]/g, "");
 }
 
 export default function (view, params) {
@@ -107,6 +103,7 @@ export default function (view, params) {
     const state = {
         requests: [],
         qualityOptions: [],
+        statuses: [], // [{ id, name, color }] in display order; the first is given to new requests
         descending: true,
         generalLoaded: false,
         isAdministrator: null
@@ -127,6 +124,21 @@ export default function (view, params) {
                 loading.hideLoadingMsg();
             }
         }
+    }
+
+    function findStatus(id) {
+        return state.statuses.find((status) => status.id === id);
+    }
+
+    // Display name for a stored status id (ids never change; names are editable).
+    function statusLabel(id) {
+        const status = findStatus(id);
+        return status ? status.name : String(id || "").replace(/([a-z])([A-Z])/g, "$1 $2");
+    }
+
+    function statusColor(id) {
+        const status = findStatus(id);
+        return status ? status.color : "";
     }
 
     // ---------- Tabs ----------
@@ -205,6 +217,111 @@ export default function (view, params) {
         }
     }
 
+    // ---------- Status options ----------
+
+    function renderStatusOptions() {
+        const target = $("#requestsStatusOptions");
+        target.replaceChildren();
+        state.statuses.forEach(function (status, index) {
+            const row = document.createElement("div");
+            row.className = "requests-quality-row requests-status-row";
+
+            const color = document.createElement("input");
+            color.type = "color";
+            color.value = /^#[0-9a-f]{6}$/i.test(status.color) ? status.color : "#bdbdbd";
+            color.className = "requests-status-color";
+            color.setAttribute("aria-label", `Colour for ${status.name}`);
+            color.addEventListener("change", function () {
+                saveStatusOptions(state.statuses.map((item, i) => (i === index ? { ...item, color: color.value } : item)));
+            });
+
+            const name = document.createElement("input");
+            name.type = "text";
+            name.value = status.name;
+            name.style.color = status.color;
+            name.setAttribute("aria-label", `Status ${index + 1} name`);
+            name.addEventListener("change", function () {
+                const next = name.value.trim();
+                if (!next) {
+                    name.value = status.name;
+                    return;
+                }
+                saveStatusOptions(state.statuses.map((item, i) => (i === index ? { ...item, name: next } : item)));
+            });
+
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "raised emby-button";
+            remove.textContent = "Remove";
+            remove.disabled = state.statuses.length <= 1;
+            remove.title = remove.disabled ? "At least one status is required." : "Remove this status";
+            remove.addEventListener("click", async function () {
+                // A removed status would leave its requests with no name to show, so only allow
+                // removing statuses no request is using.
+                let inUse = 0;
+                try {
+                    inUse = ((await api("Requests")) || []).filter((request) => value(request, "status") === status.id).length;
+                } catch (error) {
+                    setMessage("#requestsGeneralMessage", error.message, true);
+                    return;
+                }
+                if (inUse) {
+                    setMessage("#requestsGeneralMessage",
+                        `"${status.name}" is used by ${inUse} request${inUse === 1 ? "" : "s"}. Move ${inUse === 1 ? "it" : "them"} to another status on the Requests tab first.`, true);
+                    return;
+                }
+                if (window.confirm(`Remove the "${status.name}" status?`)) {
+                    saveStatusOptions(state.statuses.filter((_, i) => i !== index));
+                }
+            });
+
+            if (index === 0) {
+                name.title = "New requests start in this status.";
+            }
+            row.append(color, name, remove);
+            target.append(row);
+        });
+        populateStatusFilter();
+    }
+
+    async function saveStatusOptions(options, focusLast) {
+        try {
+            const result = await api("Requests/Configuration/StatusOptions", "PUT", { options: options });
+            state.statuses = normalizeStatuses(value(result, "options"));
+            setMessage("#requestsGeneralMessage", "Status options saved.");
+        } catch (error) {
+            setMessage("#requestsGeneralMessage", error.message, true);
+        }
+        renderStatusOptions();
+        if (focusLast) {
+            const inputs = view.querySelectorAll("#requestsStatusOptions input[type=text]");
+            const last = inputs[inputs.length - 1];
+            if (last) {
+                last.focus();
+                last.select();
+            }
+        }
+    }
+
+    function normalizeStatuses(options) {
+        return (options || []).map((option) => ({
+            id: value(option, "id"),
+            name: value(option, "name"),
+            color: value(option, "color")
+        }));
+    }
+
+    function populateStatusFilter() {
+        const select = $("#requestsAdminStatus");
+        const current = select.value;
+        select.replaceChildren(new Option("All statuses", ""), ...state.statuses.map(function (status) {
+            const option = new Option(status.name, status.id);
+            option.style.color = status.color;
+            return option;
+        }));
+        select.value = state.statuses.some((status) => status.id === current) ? current : "";
+    }
+
     async function saveMediaOptions(changed) {
         const movies = $("#requestsEnableMovies");
         const tvShows = $("#requestsEnableTvShows");
@@ -233,12 +350,20 @@ export default function (view, params) {
             (result) => ({ ok: true, value: result }),
             (error) => ({ ok: false, error: error }));
 
-        const [quality, diagnostics, media, providers] = await Promise.all([
+        const [quality, diagnostics, media, providers, statuses] = await Promise.all([
             settle(api("Requests/Configuration/QualityOptions")),
             settle(api("Requests/Configuration/Diagnostics")),
             settle(api("Requests/Configuration/MediaOptions")),
-            settle(api("Requests/Search/Providers"))
+            settle(api("Requests/Search/Providers")),
+            settle(api("Requests/Configuration/StatusOptions"))
         ]);
+
+        if (statuses.ok) {
+            state.statuses = normalizeStatuses(value(statuses.value, "options"));
+            renderStatusOptions();
+        } else {
+            $("#requestsStatusOptions").textContent = statuses.error.message;
+        }
 
         if (quality.ok) {
             state.qualityOptions = value(quality.value, "options") || [];
@@ -250,9 +375,10 @@ export default function (view, params) {
         if (diagnostics.ok) {
             const d = diagnostics.value;
             $("#requestsGeneralVersion").textContent = value(d, "pluginVersion") || "Unknown";
-            $("#requestsGeneralTotals").textContent =
-                `${value(d, "totalRequests") || 0} total · ${value(d, "pendingRequests") || 0} pending · `
-                + `${value(d, "approvedRequests") || 0} approved · ${value(d, "availableRequests") || 0} available`;
+            const counts = value(d, "statusCounts") || {};
+            $("#requestsGeneralTotals").textContent = [`${value(d, "totalRequests") || 0} total`]
+                .concat(Object.entries(counts).map(([id, count]) => `${count} ${statusLabel(id)}`))
+                .join(" · ");
         } else {
             $("#requestsGeneralVersion").textContent = diagnostics.error.message;
             $("#requestsGeneralTotals").textContent = "Unavailable";
@@ -325,8 +451,10 @@ export default function (view, params) {
     function buildRow(request) {
         const id = value(request, "id");
         const posterUrl = value(request, "posterUrl");
-        const status = value(request, "status") || "Pending";
+        const status = value(request, "status") || "";
         const row = document.createElement("tr");
+        // Configured statuses, plus the request's own if it was since removed from the list.
+        const choices = state.statuses.concat(findStatus(status) ? [] : [{ id: status, name: statusLabel(status), color: "" }]);
 
         row.innerHTML =
             `<td>${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy">` : ""}</td>`
@@ -337,10 +465,10 @@ export default function (view, params) {
             + `<td>${escapeHtml(scopeLabel(request))}</td>`
             + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
             + `<td>${escapeHtml(value(request, "note") || "")}</td>`
-            // Each option carries its own status class so the open list shows every status in its
-            // own colour; the select's class only colours the closed control.
-            + `<td><select class="requests-status-select ${statusClass(status)}" data-status aria-label="Request status">${STATUS_OPTIONS.map((option) =>
-                `<option class="${statusClass(option)}" value="${option}"${option === status ? " selected" : ""}>${statusLabel(option)}</option>`).join("")}</select></td>`
+            // Each option is coloured individually so the open list shows every status in its own
+            // colour; the select's colour only reflects the current status.
+            + `<td><select class="requests-status-select ${statusClass(status)}" style="color:${escapeHtml(statusColor(status))}" data-status aria-label="Request status">${choices.map((option) =>
+                `<option class="${statusClass(option.id)}" style="color:${escapeHtml(option.color)}" value="${escapeHtml(option.id)}"${option.id === status ? " selected" : ""}>${escapeHtml(option.name)}</option>`).join("")}</select></td>`
             + `<td><button type="button" class="raised emby-button" data-delete title="Delete request">Delete</button></td>`;
 
         row.querySelector("[data-details]").addEventListener("click", function () {
@@ -349,7 +477,7 @@ export default function (view, params) {
 
         const select = row.querySelector("[data-status]");
         select.addEventListener("change", async function () {
-            const previous = value(request, "status") || "Pending";
+            const previous = value(request, "status") || "";
             const next = select.value;
             select.disabled = true;
             try {
@@ -358,6 +486,7 @@ export default function (view, params) {
                 request.status = next;
                 request.Status = next;
                 select.className = `requests-status-select ${statusClass(next)}`;
+                select.style.color = statusColor(next);
                 setMessage("#requestsAdminMessage", `"${value(request, "title")}" marked ${statusLabel(next)}.`);
             } catch (error) {
                 select.value = previous;
@@ -460,6 +589,11 @@ export default function (view, params) {
             name = `New option ${suffix++}`;
         }
         saveQualityOptions(state.qualityOptions.concat(name), true);
+    });
+
+    $("#requestsStatusAdd").addEventListener("click", function () {
+        // New statuses are sent without an id; the server assigns a permanent one.
+        saveStatusOptions(state.statuses.concat({ id: "", name: "New status", color: "#bdbdbd" }), true);
     });
 
     $("#requestsEnableMovies").addEventListener("change", function () { saveMediaOptions(this); });

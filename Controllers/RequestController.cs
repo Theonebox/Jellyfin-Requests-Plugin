@@ -143,9 +143,9 @@ public sealed class RequestController : ControllerBase
                 return Forbidden("You can only cancel your own requests.");
             }
 
-            if (existing.Status != RequestStatus.Pending)
+            if (!string.Equals(existing.Status, RequestService.InitialStatusId, StringComparison.Ordinal))
             {
-                return Conflict(new { error = "Only pending requests can be cancelled." });
+                return Conflict(new { error = "Only requests that have not been processed yet can be cancelled." });
             }
         }
 
@@ -160,7 +160,8 @@ public sealed class RequestController : ControllerBase
             return Forbidden("Administrator access is required.");
         }
 
-        if (model is null || !Enum.IsDefined(model.Status))
+        var validIds = Plugin.Instance?.Configuration.GetStatusOptions().Select(option => option.Id) ?? Array.Empty<string>();
+        if (model is null || string.IsNullOrWhiteSpace(model.Status) || !validIds.Contains(model.Status, StringComparer.Ordinal))
         {
             return BadRequest(new { error = "A valid request status is required." });
         }
@@ -241,5 +242,5 @@ public sealed class CreateRequestModel
 public sealed class UpdateStatusModel
 {
     [JsonPropertyName("status")]
-    public RequestStatus Status { get; set; }
+    public string? Status { get; set; }
 }

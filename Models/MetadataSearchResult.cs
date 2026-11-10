@@ -37,5 +37,5 @@ public sealed class MetadataSearchResult
 
     /// <summary>Status of an existing request for this title by any user, if there is one.</summary>
     [JsonPropertyName("requestStatus")]
-    public RequestStatus? RequestStatus { get; set; }
+    public string? RequestStatus { get; set; }
 }

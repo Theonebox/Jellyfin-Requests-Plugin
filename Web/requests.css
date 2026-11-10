@@ -319,13 +319,15 @@
     white-space: nowrap;
 }
 
-.requestsStatus-pending { color: inherit; opacity: .8; }
-.requestsStatus-approved { color: #66bb6a; }
-.requestsStatus-in-progress { color: #ffa726; }
-.requestsStatus-available,
-.requestsStatus-completed { color: #42a5f5; }
-.requestsStatus-denied,
-.requestsStatus-cancelled { color: #ef5350; }
+/* Status colours come from the administrator's Status Options (set inline). Custom CSS can still
+   target .requestsStatus-<id>, e.g. .requestsStatus-in-progress. */
+
+.requestsMine-note {
+    overflow: hidden;
+    font-style: italic;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
 
 /* ---------- dialog (Jellyfin formDialog markup) ---------- */
 

@@ -54,6 +54,10 @@
         requested: new Map(), // mediaKey -> status
         quality: DEFAULT_QUALITY,
         media: { movies: true, tvShows: true },
+        // Configured statuses (id -> { name, color }); the first one is the "not processed yet"
+        // status in which users may still cancel.
+        statuses: new Map(),
+        initialStatus: "Pending",
         dialogItem: null,
         lastFocus: null,
         searchController: null,
@@ -133,12 +137,19 @@
         return id ? `${isTv(item) ? "tv" : "movie"}:${String(id).toLowerCase()}` : "";
     }
 
+    // Class hook for custom CSS, e.g. .requestsStatus-in-progress.
     function statusClass(status) {
-        return "requestsStatus-" + String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+        return "requestsStatus-" + String(status || "").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase().replace(/[^a-z0-9-]/g, "");
     }
 
     function statusLabel(status) {
-        return String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1 $2");
+        const option = state.statuses.get(status);
+        return option ? option.name : String(status || "").replace(/([a-z])([A-Z])/g, "$1 $2");
+    }
+
+    function statusColor(status) {
+        const option = state.statuses.get(status);
+        return option ? option.color : "";
     }
 
     function scopeLabel(request) {
@@ -196,10 +207,20 @@
     }
 
     async function loadSettings() {
-        const [quality, media] = await Promise.allSettled([
+        const [quality, media, statuses] = await Promise.allSettled([
             api("Requests/Configuration/QualityOptions"),
-            api("Requests/Configuration/MediaOptions")
+            api("Requests/Configuration/MediaOptions"),
+            api("Requests/Configuration/StatusOptions")
         ]);
+
+        if (statuses.status === "fulfilled") {
+            const options = field(statuses.value, "options") || [];
+            state.statuses = new Map(options.map((option) => [field(option, "id"), { name: field(option, "name"), color: field(option, "color") }]));
+            state.initialStatus = options.length ? field(options[0], "id") : "Pending";
+            // Status names/colours may have changed: redraw what's on screen.
+            renderMyRequests();
+            refreshCardStates();
+        }
 
         if (quality.status === "fulfilled") {
             const options = field(quality.value, "options");
@@ -279,6 +300,14 @@
             details.textContent = [field(request, "mediaType"), scopeLabel(request), field(request, "mediaQuality")]
                 .filter(Boolean).join(" · ");
 
+            // The note the user added, on its own line (full text on hover when it's cut off).
+            const noteText = String(field(request, "note") || "").trim();
+            const note = document.createElement("div");
+            note.className = "secondaryText requestsMine-note";
+            note.textContent = noteText ? `“${noteText}”` : "";
+            note.title = noteText;
+            note.hidden = !noteText;
+
             const date = document.createElement("div");
             date.className = "secondaryText";
             const requested = formatDate(field(request, "requestedAtUtc"));
@@ -289,9 +318,11 @@
             const badge = document.createElement("span");
             badge.className = `requestsStatusBadge ${statusClass(status)}`;
             badge.textContent = statusLabel(status);
+            badge.style.color = statusColor(status);
             footer.append(badge);
 
-            if (status === "Pending") {
+            // Cancelling is allowed only while the request is still in the first status.
+            if (status === state.initialStatus) {
                 const cancel = document.createElement("button");
                 cancel.type = "button";
                 cancel.className = "paper-icon-button-light requestsMine-cancel";
@@ -304,7 +335,7 @@
                 footer.append(cancel);
             }
 
-            body.append(heading, details, date, footer);
+            body.append(heading, details, note, date, footer);
             item.append(poster, body);
             fragment.append(item);
         });
@@ -366,19 +397,20 @@
                 mine: Boolean(mine),
                 status: status,
                 text: mine ? statusLabel(status) : "Already requested",
-                icon: STATUS_ICONS[status] || "schedule",
+                icon: STATUS_ICONS[status] || "label",
                 indicatorClass: "countIndicator requestsIndicator",
-                statusClass: statusClass(status)
+                statusClass: statusClass(status),
+                color: mine ? statusColor(status) : ""
             };
         }
         return null;
     }
 
+    // Icons for the built-in statuses; statuses an administrator adds get a generic label icon.
     const STATUS_ICONS = {
         Pending: "schedule",
         Approved: "thumb_up",
         InProgress: "sync",
-        Available: "check",
         Completed: "check",
         Denied: "block",
         Cancelled: "block"
@@ -392,6 +424,7 @@
         stateLine.textContent = current ? current.text : " ";
         stateLine.className = "cardText cardTextCentered cardText-secondary requestsCard-state"
             + (current && current.statusClass ? " " + current.statusClass : "");
+        stateLine.style.color = current && current.color ? current.color : "";
         if (current) {
             const indicator = document.createElement("div");
             indicator.className = `indicator ${current.indicatorClass}`;
@@ -701,8 +734,27 @@
         }
     }, true);
 
+    // Themes give the search box, type picker and raised button different heights; match the
+    // picker and button to the search box (they're already bottom-aligned) so the row lines up.
+    function alignSearchControls() {
+        const height = el.input.offsetHeight;
+        if (!height) {
+            return;
+        }
+        [el.searchButton, el.type].forEach(function (control) {
+            control.style.boxSizing = "border-box";
+            control.style.height = height + "px";
+            control.style.paddingTop = "0";
+            control.style.paddingBottom = "0";
+        });
+    }
+
+    window.addEventListener("resize", alignSearchControls);
+
     let lastRefresh = 0;
     function show() {
+        window.requestAnimationFrame(alignSearchControls);
+        window.setTimeout(alignSearchControls, 250);
         // Cheap refresh so admin setting changes and status updates show up when reopening.
         const now = Date.now();
         if (now - lastRefresh > 5000) {

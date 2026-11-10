@@ -33,6 +33,9 @@ public sealed class RequestService
 
     public string StorageFilePath { get; }
 
+    /// <summary>The first configured status: given to new requests; owners may cancel while in it.</summary>
+    public static string InitialStatusId => Plugin.Instance?.Configuration.GetStatusOptions()[0].Id ?? "Pending";
+
     public DateTime? LastSaveTimestampUtc { get; private set; }
 
     public IReadOnlyList<MediaRequest> GetAll()
@@ -69,10 +72,10 @@ public sealed class RequestService
 
             request.Id = Guid.NewGuid();
             request.RequestedAtUtc = DateTime.UtcNow;
-            request.Status = RequestStatus.Pending;
+            request.Status = InitialStatusId;
             request.StatusHistory = new List<RequestStatusChange>
             {
-                new() { Status = RequestStatus.Pending, ChangedAtUtc = request.RequestedAtUtc }
+                new() { Status = request.Status, ChangedAtUtc = request.RequestedAtUtc }
             };
 
             _requests.Add(Clone(request));
@@ -81,7 +84,7 @@ public sealed class RequestService
         }
     }
 
-    public MediaRequest? UpdateStatus(Guid id, RequestStatus status)
+    public MediaRequest? UpdateStatus(Guid id, string status)
     {
         lock (_syncRoot)
         {
@@ -91,7 +94,7 @@ public sealed class RequestService
                 return null;
             }
 
-            if (request.Status != status)
+            if (!string.Equals(request.Status, status, StringComparison.Ordinal))
             {
                 request.Status = status;
                 request.StatusHistory.Add(new RequestStatusChange { Status = status, ChangedAtUtc = DateTime.UtcNow });
@@ -120,7 +123,7 @@ public sealed class RequestService
     /// Returns the status of an existing request (by any user) for the given title, or null.
     /// A request for the whole movie/series wins over season or episode requests.
     /// </summary>
-    public RequestStatus? FindExistingStatus(MediaCategory category, string providerId, IReadOnlyDictionary<string, string> providerIds)
+    public string? FindExistingStatus(MediaCategory category, string providerId, IReadOnlyDictionary<string, string> providerIds)
     {
         var probe = new MediaRequest { ProviderId = providerId ?? string.Empty, ProviderIds = new(providerIds, StringComparer.OrdinalIgnoreCase) };
 
@@ -240,6 +243,10 @@ public sealed class RequestService
             .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         request.Note = request.Note?.Trim() ?? string.Empty;
         request.MediaQuality = request.MediaQuality?.Trim() ?? string.Empty;
+        // "Available" was removed as a status; fold it into "Completed". Blank (very old) -> initial.
+        request.Status = string.IsNullOrWhiteSpace(request.Status) ? InitialStatusId
+            : string.Equals(request.Status, "Available", StringComparison.OrdinalIgnoreCase) ? "Completed"
+            : request.Status.Trim();
         request.StatusHistory ??= new List<RequestStatusChange>();
         if (request.StatusHistory.Count == 0 && request.RequestedAtUtc != default)
         {

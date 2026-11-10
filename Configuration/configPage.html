@@ -36,6 +36,12 @@
                 <p class="fieldDescription">Quality choices offered to users when they submit a request. Changes save automatically.</p>
                 <div id="requestsQualityOptions"></div>
                 <button type="button" is="emby-button" class="raised emby-button requests-quality-add" id="requestsQualityAdd">Add Quality Option</button>
+
+                <h3 class="requests-config-section-title">Status Options</h3>
+                <p class="fieldDescription">Statuses you can give a request, with the colour they're shown in. The first status is given to new requests, and users can cancel a request only while it's still in that status. Renaming a status keeps existing requests on it. Changes save automatically.</p>
+                <div id="requestsStatusOptions"></div>
+                <button type="button" is="emby-button" class="raised emby-button requests-quality-add" id="requestsStatusAdd">Add Status</button>
+
                 <div id="requestsGeneralMessage" class="fieldDescription requests-config-message" role="status" aria-live="polite"></div>
             </section>
 
@@ -43,10 +49,9 @@
                 <h3 class="requests-config-section-title">Requests</h3>
                 <div class="requests-admin-toolbar">
                     <input id="requestsAdminSearch" type="search" placeholder="Search title, requester, notes, or provider ID" aria-label="Search requests">
+                    <!-- Filled from the configured Status Options. -->
                     <select id="requestsAdminStatus" aria-label="Status filter">
                         <option value="">All statuses</option>
-                        <option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Denied">Denied</option>
-                        <option value="InProgress">In Progress</option><option value="Available">Available</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option>
                     </select>
                     <select id="requestsAdminMediaType" aria-label="Media type filter">
                         <option value="">All media types</option><option value="Movie">Movie</option><option value="TV Show">TV Show</option>
@@ -116,11 +121,8 @@
         .requestsConfigPage .requests-admin-modal-backdrop { background: rgba(0,0,0,.6); inset: 0; position: absolute; }
         .requestsConfigPage .requests-admin-modal-panel { background: #202020; border-radius: .4em; max-height: 85vh; max-width: 40em; overflow: auto; padding: 1.5em; position: relative; width: calc(100% - 2em); }
         .requestsConfigPage .requests-admin-details-poster { float: right; margin: 0 0 1em 1em; max-width: 120px; border-radius: .25em; }
-        .requestsConfigPage .requests-status-approved { color: #66bb6a; }
-        .requestsConfigPage .requests-status-denied, .requestsConfigPage .requests-status-cancelled { color: #ef5350; }
-        .requestsConfigPage .requests-status-in-progress { color: #ffa726; }
-        .requestsConfigPage .requests-status-available, .requestsConfigPage .requests-status-completed { color: #42a5f5; }
-        .requestsConfigPage .requests-status-pending { color: #bdbdbd; }
-        .requestsConfigPage .requests-status-select option { background-color: #292929; }
+        .requestsConfigPage .requests-status-select option, .requestsConfigPage #requestsAdminStatus option { background-color: #292929; }
+        .requestsConfigPage .requests-status-row input[type="text"] { flex: 1; font-weight: 600; }
+        .requestsConfigPage .requests-status-row .requests-status-color { flex: 0 0 2.75em; width: 2.75em; height: 2.4em; padding: .15em; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; background: transparent; cursor: pointer; }
     </style>
 </div>

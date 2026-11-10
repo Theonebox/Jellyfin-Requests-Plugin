@@ -66,10 +66,8 @@
             + ` overscroll-behavior: contain; z-index: 998; -webkit-overflow-scrolling: touch; }`
             + `:where(#${VIEW_ID}) { background-color: var(--requests-page-background-color, #101010);`
             + ` background-image: var(--requests-page-background-image, none); background-size: cover; background-attachment: fixed; }`
-            + `.requestsHeaderButton-standalone { display: inline-flex; align-items: center; justify-content: center;`
-            + ` padding: 12px; margin: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }`
-            + `.requestsHeaderButton-standalone:hover { background-color: rgba(128, 128, 128, .15); }`
-            + `#${BUTTON_ID}:is(.MuiIconButton-root, .requestsHeaderButton-standalone).requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2); }`;
+            + `#${BUTTON_ID}.requestsHeaderButton-mui:hover { background-color: rgba(128, 128, 128, .15) !important; }`
+            + `#${BUTTON_ID}.requestsHeaderButton-mui.requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2) !important; }`;
         document.head.append(style);
     }
 
@@ -93,24 +91,19 @@
     // Jellyfin has two header implementations and both can exist in the DOM at once (the unused
     // one is hidden): the classic .skinHeader and the React/MUI .MuiAppBar-root (the
     // "experimental" layout, also used by Jellyfin Enhanced). Only the visible one counts.
-    // Returns { kind, parent, before, template } describing where and how the button goes.
+    // Returns { kind, parent, before } describing where and how the button goes.
     function findInsertionPoint() {
         const appBar = document.querySelector(".MuiAppBar-root");
         if (isVisible(appBar)) {
-            // Copy only the SyncPlay button's look: other toolbar buttons (from plugins) can have
-            // unrelated styling. Until SyncPlay renders, the button styles itself and is rebuilt
-            // once SyncPlay appears.
-            const sync = appBar.querySelector('button[aria-label="SyncPlay"], button[title="SyncPlay"]');
-            if (sync && sync.parentElement) {
-                return { kind: "mui-sync", parent: sync.parentElement, before: sync, template: sync };
-            }
-            const firstIcon = Array.from(appBar.querySelectorAll(".MuiIconButton-root"))
-                .find((button) => button.id !== BUTTON_ID && button.getAttribute("aria-controls") !== "app-user-menu" && isVisible(button));
-            if (firstIcon) {
-                return { kind: "mui", parent: firstIcon.parentElement, before: firstIcon, template: null };
+            // Next to SyncPlay when it's there, otherwise before the first toolbar icon.
+            const anchor = appBar.querySelector('button[aria-label="SyncPlay"], button[title="SyncPlay"]')
+                || Array.from(appBar.querySelectorAll(".MuiIconButton-root"))
+                    .find((button) => button.id !== BUTTON_ID && button.getAttribute("aria-controls") !== "app-user-menu" && isVisible(button));
+            if (anchor && anchor.parentElement) {
+                return { kind: "mui", parent: anchor.parentElement, before: anchor };
             }
             const toolbar = appBar.querySelector(".MuiToolbar-root");
-            return toolbar ? { kind: "mui", parent: toolbar, before: null, template: null } : null;
+            return toolbar ? { kind: "mui", parent: toolbar, before: null } : null;
         }
 
         const headerRight = document.querySelector(".skinHeader .headerRight");
@@ -120,11 +113,20 @@
             const before = headerRight.querySelector(".headerSyncButton")
                 || headerRight.querySelector(".headerCastButton")
                 || headerRight.firstChild;
-            return { kind: "classic", parent: headerRight, before: before, template: null };
+            return { kind: "classic", parent: headerRight, before: before };
         }
 
         return null;
     }
+
+    // React header: the button is fully self-styled with inline styles matching MUI's 48px icon
+    // button / 24px icon. It deliberately copies nothing from neighbouring buttons, whose styling
+    // comes from generated CSS classes that aren't always present (which left an unstyled,
+    // empty browser button on some loads).
+    const MUI_BUTTON_STYLE = "display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;"
+        + "flex:0 0 auto;width:48px;height:48px;padding:0;margin:0;border:0;border-radius:50%;"
+        + "background:transparent;color:inherit;font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;";
+    const MUI_ICON_STYLE = "display:block;width:24px;height:24px;fill:currentColor;flex-shrink:0;pointer-events:none;";
 
     function createButton(point) {
         const button = document.createElement("button");
@@ -140,14 +142,9 @@
             // Same markup Jellyfin uses for its own classic header icons.
             button.innerHTML = '<span class="material-icons how_to_vote" aria-hidden="true"></span>';
         } else {
-            const svgTemplate = point.template && point.template.querySelector("svg");
-            button.className = point.template
-                ? point.template.className.replace(/\bMui-focusVisible\b/g, "") + " requestsHeaderButton"
-                : "requestsHeaderButton requestsHeaderButton-standalone";
-            // The icon always gets an explicit size so it can't collapse to zero width when the
-            // copied classes don't size it.
-            button.innerHTML = `<svg class="${svgTemplate ? svgTemplate.getAttribute("class") : ""}" focusable="false" aria-hidden="true" viewBox="0 0 24 24"`
-                + ' style="width:1em;height:1em;font-size:1.5rem;fill:currentColor;flex-shrink:0">'
+            button.className = "requestsHeaderButton requestsHeaderButton-mui";
+            button.style.cssText = MUI_BUTTON_STYLE;
+            button.innerHTML = `<svg focusable="false" aria-hidden="true" viewBox="0 0 24 24" style="${MUI_ICON_STYLE}">`
                 + `<path d="${HOW_TO_VOTE_PATH}"></path></svg>`;
         }
 

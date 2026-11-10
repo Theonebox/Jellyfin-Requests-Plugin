@@ -58,10 +58,84 @@ public sealed class MetadataIdentifyService
             AppendResults(results, tvTask.Result, "TV", MediaCategory.TVShows);
         }
 
-        return results
-            .GroupBy(result => $"{result.MediaType}:{result.ProviderId}:{result.Name}:{result.ProductionYear}")
-            .Select(group => group.First())
-            .ToList();
+        return MergeByProviderId(results);
+    }
+
+    /// <summary>
+    /// Different metadata providers return the same title separately (e.g. TheMovieDb and OMDb).
+    /// Results of the same media type that share any provider id (Tmdb, Imdb, Tvdb, ...) — directly
+    /// or through a chain — are merged into one, keeping the first result's position and filling
+    /// gaps (poster, overview, year) from the others. Matching is by id only, never by name.
+    /// </summary>
+    private static List<MetadataSearchResult> MergeByProviderId(List<MetadataSearchResult> results)
+    {
+        var parent = Enumerable.Range(0, results.Count).ToArray();
+        int Find(int index) => parent[index] == index ? index : parent[index] = Find(parent[index]);
+
+        var owner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < results.Count; index++)
+        {
+            foreach (var (provider, id) in results[index].ProviderIds)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                var key = $"{results[index].MediaCategory}|{provider}|{id.Trim()}";
+                if (owner.TryGetValue(key, out var other))
+                {
+                    // Union, keeping the earlier result as the group's root.
+                    var (a, b) = (Find(other), Find(index));
+                    if (a != b)
+                    {
+                        parent[Math.Max(a, b)] = Math.Min(a, b);
+                    }
+                }
+                else
+                {
+                    owner[key] = index;
+                }
+            }
+        }
+
+        var merged = new List<MetadataSearchResult>();
+        var byRoot = new Dictionary<int, MetadataSearchResult>();
+        for (var index = 0; index < results.Count; index++)
+        {
+            var root = Find(index);
+            var result = results[index];
+            if (!byRoot.TryGetValue(root, out var target))
+            {
+                byRoot[root] = result;
+                merged.Add(result);
+                continue;
+            }
+
+            foreach (var (provider, id) in result.ProviderIds)
+            {
+                target.ProviderIds.TryAdd(provider, id);
+            }
+
+            if (string.IsNullOrWhiteSpace(target.PosterUrl))
+            {
+                target.PosterUrl = result.PosterUrl;
+            }
+
+            if (string.IsNullOrWhiteSpace(target.Overview))
+            {
+                target.Overview = result.Overview;
+            }
+
+            target.ProductionYear ??= result.ProductionYear;
+        }
+
+        foreach (var result in merged)
+        {
+            result.ProviderId = GetProviderId(result.ProviderIds, "Tmdb", "Imdb", "Tvdb");
+        }
+
+        return merged;
     }
 
     public IReadOnlyList<string> GetConfiguredProviders()
