@@ -6,7 +6,7 @@ using Jellyfin.Plugin.Requests.Services;
 namespace Jellyfin.Plugin.Requests.Controllers;
 
 [ApiController]
-[AllowAnonymous]
+[Authorize]
 [Route("Requests/Search")]
 public sealed class SearchController : ControllerBase
 {

@@ -1,24 +1,46 @@
 (function () {
     "use strict";
 
-    const buttonId = "requests-header-button";
-    const viewId = "requests-public-view";
-    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.66-settings-fix";
+    // Injected into Jellyfin's index.html by NavigationStartupFilter.
+    // Adds a "Requests" button to the header. Clicking it opens the Requests page
+    // as an overlay that sits on top of Jellyfin's own view, so it never touches
+    // Jellyfin's router (the built-in plugin page route is administrator-only).
 
-    function isAuthenticated() {
-        return typeof ApiClient !== "undefined"
-            && typeof ApiClient.getCurrentUserId === "function"
-            && Boolean(ApiClient.getCurrentUserId());
+    if (window.__requestsNavigationLoaded) {
+        return;
+    }
+    window.__requestsNavigationLoaded = true;
+
+    const BUTTON_ID = "requests-header-button";
+    const VIEW_ID = "requests-public-view";
+    const ASSET_VERSION = "1.0.0.67";
+
+    let addScheduled = false;
+    let loadingView = null;
+
+    function client() {
+        return window.ApiClient;
     }
 
-    function getHeaderRightContainer() {
-        const legacy = document.querySelector(".headerRight:not([data-requests-fallback])");
-        if (legacy && legacy.offsetParent !== null) {
+    function isAuthenticated() {
+        const api = client();
+        return Boolean(api && typeof api.getCurrentUserId === "function" && api.getCurrentUserId());
+    }
+
+    function assetUrl(file) {
+        const api = client();
+        const path = `Requests/Web/${file}?v=${ASSET_VERSION}`;
+        return api && typeof api.getUrl === "function" ? api.getUrl(path) : "/" + path;
+    }
+
+    function getHeaderContainer() {
+        const legacy = document.querySelector(".skinHeader .headerRight");
+        if (legacy) {
             return legacy;
         }
 
         const userMenu = document.querySelector('[aria-controls="app-user-menu"]');
-        const toolbar = userMenu?.closest(".MuiToolbar-root")
+        const toolbar = (userMenu && userMenu.closest(".MuiToolbar-root"))
             || document.querySelector(".MuiAppBar-root .MuiToolbar-root");
         if (!toolbar) {
             return null;
@@ -28,168 +50,210 @@
         while (container && container.parentElement !== toolbar) {
             container = container.parentElement;
         }
-
-        if (!container) {
-            container = document.createElement("div");
-            container.className = "headerRight";
-            container.dataset.requestsFallback = "true";
-            toolbar.appendChild(container);
-        }
-
-        return container;
+        return container || toolbar;
     }
 
     function addButton() {
+        addScheduled = false;
+        const existing = document.getElementById(BUTTON_ID);
+
         if (!isAuthenticated()) {
-            document.getElementById(buttonId)?.remove();
+            if (existing) {
+                existing.remove();
+            }
+            closeRequestsPage();
             return;
         }
 
-        if (document.getElementById(buttonId)) {
+        if (existing && existing.isConnected) {
             return;
         }
 
-        const dice = document.getElementById("randomItemButton");
-        const header = dice?.parentElement || getHeaderRightContainer();
+        const header = getHeaderContainer();
         if (!header) {
             return;
         }
 
         const button = document.createElement("button");
-        button.id = buttonId;
+        button.id = BUTTON_ID;
         button.type = "button";
-        button.setAttribute("is", "paper-icon-button-light");
         button.className = "headerButton headerButtonRight paper-icon-button-light";
         button.title = "Requests";
         button.setAttribute("aria-label", "Requests");
         button.innerHTML = '<span class="material-icons" aria-hidden="true">how_to_vote</span>';
-        button.onclick = function (event) {
+        button.addEventListener("click", function (event) {
             event.preventDefault();
             event.stopPropagation();
-            showRequestsPage().catch(function (error) {
-                console.error("Requests page could not be loaded.", error);
-            });
-        };
-
-        if (dice?.parentElement === header) {
-            dice.parentElement.insertBefore(button, dice.nextSibling);
-        } else {
-            header.prepend(button);
-        }
-
-    }
-
-    async function showRequestsPage() {
-        let view = document.getElementById(viewId);
-        if (!view) {
-            const response = await fetch("/Requests/Web/requests.html", { credentials: "same-origin" });
-            if (!response.ok) {
-                throw new Error("Unable to load Requests.");
-            }
-
-            const documentFragment = document.createRange().createContextualFragment(await response.text());
-            view = document.createElement("div");
-            view.id = viewId;
-            view.className = "page type-interior requests-public-view";
-            view.append(documentFragment);
-
-            const container = document.querySelector(".mainAnimated") || document.body;
-            container.append(view);
-
-            const script = document.createElement("script");
-            script.src = "/Requests/Web/requests.js?v=1.0.0.66-click-fix";
-            script.onerror = function () {
-                throw new Error("Unable to load the Requests page script.");
-            };
-            view.append(script);
-        }
-
-        document.querySelectorAll(".mainAnimated > .page, body > .page").forEach(function (page) {
-            page.hidden = page !== view;
+            toggleRequestsPage();
         });
-        view.hidden = false;
-        view.style.display = "";
-    }
 
-    function hideRequestsPage() {
-        const view = document.getElementById(viewId);
-        if (!view) {
-            return;
-        }
-
-        view.hidden = true;
-        document.querySelectorAll(".mainAnimated > .page").forEach(function (page) {
-            if (page !== view) {
-                page.hidden = false;
-            }
-        });
-    }
-
-    function syncRequestsPage() {
-        hideRequestsPage();
+        header.prepend(button);
     }
 
     function scheduleAdd() {
-        window.requestAnimationFrame(addButton);
+        if (!addScheduled) {
+            addScheduled = true;
+            window.requestAnimationFrame(addButton);
+        }
     }
 
-    function loadConfigurationScript() {
-        const page = document.getElementById("requestsConfigPage");
-        if (!page || page.dataset.requestsConfigInitialized === "true") {
+    function headerBottom() {
+        const header = document.querySelector(".skinHeader") || document.querySelector(".MuiAppBar-root");
+        if (!header) {
+            return 0;
+        }
+        const rect = header.getBoundingClientRect();
+        return Math.max(0, Math.round(rect.bottom));
+    }
+
+    function positionView(view) {
+        view.style.top = headerBottom() + "px";
+    }
+
+    function ensureStylesheet() {
+        if (!document.getElementById("requests-public-stylesheet")) {
+            const link = document.createElement("link");
+            link.id = "requests-public-stylesheet";
+            link.rel = "stylesheet";
+            link.href = assetUrl("requests.css");
+            document.head.append(link);
+        }
+    }
+
+    async function createView() {
+        ensureStylesheet();
+
+        const response = await fetch(assetUrl("requests.html"), { credentials: "same-origin" });
+        if (!response.ok) {
+            throw new Error(`Unable to load the Requests page (${response.status}).`);
+        }
+
+        const view = document.createElement("div");
+        view.id = VIEW_ID;
+        view.className = "requests-public-view";
+        view.hidden = true;
+        view.style.cssText = "position:fixed;left:0;right:0;bottom:0;z-index:1001;overflow-y:auto;"
+            + "background:var(--requests-page-background, #101010);";
+        view.innerHTML = await response.text();
+
+        const close = document.createElement("button");
+        close.type = "button";
+        close.className = "paper-icon-button-light requests-public-close";
+        close.title = "Close Requests";
+        close.setAttribute("aria-label", "Close Requests");
+        close.style.cssText = "position:absolute;top:12px;right:12px;z-index:2;";
+        close.innerHTML = '<span class="material-icons" aria-hidden="true">close</span>';
+        close.addEventListener("click", closeRequestsPage);
+        view.prepend(close);
+
+        document.body.append(view);
+
+        // requests.js initialises itself against #requestsPage once it is in the DOM.
+        await new Promise(function (resolve, reject) {
+            const script = document.createElement("script");
+            script.src = assetUrl("requests.js");
+            script.onload = resolve;
+            script.onerror = function () {
+                reject(new Error("Unable to load the Requests page script."));
+            };
+            document.body.append(script);
+        });
+
+        return view;
+    }
+
+    async function openRequestsPage() {
+        let view = document.getElementById(VIEW_ID);
+        if (!view) {
+            loadingView = loadingView || createView().finally(function () { loadingView = null; });
+            view = await loadingView;
+        }
+
+        // Match Jellyfin's theme background so the overlay blends in.
+        const background = window.getComputedStyle(document.body).backgroundColor;
+        if (background && background !== "rgba(0, 0, 0, 0)" && background !== "transparent") {
+            view.style.setProperty("--requests-page-background", background);
+        }
+
+        positionView(view);
+        view.hidden = false;
+        document.documentElement.classList.add("requests-view-open");
+        document.getElementById(BUTTON_ID)?.classList.add("requests-header-button-active");
+
+        const page = view.querySelector("#requestsPage");
+        if (page) {
+            page.dispatchEvent(new CustomEvent("requestsshow"));
+        }
+    }
+
+    function closeRequestsPage() {
+        const view = document.getElementById(VIEW_ID);
+        if (view && !view.hidden) {
+            view.hidden = true;
+        }
+        document.documentElement.classList.remove("requests-view-open");
+        document.getElementById(BUTTON_ID)?.classList.remove("requests-header-button-active");
+    }
+
+    function isOpen() {
+        const view = document.getElementById(VIEW_ID);
+        return Boolean(view && !view.hidden);
+    }
+
+    function toggleRequestsPage() {
+        if (isOpen()) {
+            closeRequestsPage();
             return;
         }
-
-        const existingScript = document.querySelector("script[data-requests-configuration-script]");
-        if (existingScript) {
-            existingScript.remove();
-        }
-
-        const script = document.createElement("script");
-        script.src = configurationScriptUrl;
-        script.dataset.requestsConfigurationScript = "true";
-        script.onload = function () {
-            if (typeof window.initializeRequestsConfiguration === "function") {
-                window.initializeRequestsConfiguration();
+        openRequestsPage().catch(function (error) {
+            console.error("[Requests]", error);
+            if (window.Dashboard && typeof window.Dashboard.alert === "function") {
+                window.Dashboard.alert(error.message);
             }
-        };
-        script.onerror = function () {
-            console.error("Requests administrator settings script could not be loaded.");
-        };
-        document.head.append(script);
-    }
-
-    function initializeConfigurationTabs() {
-        const page = document.getElementById("requestsConfigPage");
-        if (!page || page.dataset.requestsConfigTabsInitialized === "true") {
-            return;
-        }
-
-        page.dataset.requestsConfigTabsInitialized = "true";
-        page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
-            tab.addEventListener("click", function () {
-                page.querySelectorAll(".requests-config-panel").forEach(function (panel) {
-                    panel.hidden = panel.dataset.panel !== tab.dataset.tab;
-                });
-            });
         });
     }
 
     function initialize() {
         addButton();
-        new MutationObserver(function () {
-            scheduleAdd();
-            loadConfigurationScript();
-            initializeConfigurationTabs();
-        }).observe(document.documentElement, { childList: true, subtree: true });
-        window.addEventListener("hashchange", function () {
-            scheduleAdd();
-            syncRequestsPage();
+
+        // Jellyfin re-renders its header on navigation and login/logout; re-add the
+        // button when that happens. The callback is coalesced into one frame and
+        // only does work when the button is missing, so it is cheap.
+        new MutationObserver(scheduleAdd).observe(document.body, { childList: true, subtree: true });
+
+        // Any Jellyfin navigation closes the overlay.
+        window.addEventListener("hashchange", closeRequestsPage);
+        window.addEventListener("popstate", closeRequestsPage);
+
+        // Clicking another header control (home, back, search, user menu...) closes it too.
+        document.addEventListener("click", function (event) {
+            if (!isOpen() || !(event.target instanceof Element)) {
+                return;
+            }
+            if (event.target.closest("#" + BUTTON_ID)) {
+                return;
+            }
+            if (event.target.closest(".skinHeader, .MuiAppBar-root, .mainDrawer, .MuiDrawer-root")) {
+                closeRequestsPage();
+            }
+        }, true);
+
+        document.addEventListener("keydown", function (event) {
+            if (event.key !== "Escape" || !isOpen()) {
+                return;
+            }
+            const openModal = document.querySelector("#" + VIEW_ID + " .requests-modal:not([hidden])");
+            if (!openModal) {
+                closeRequestsPage();
+            }
         });
-        window.addEventListener("pageshow", scheduleAdd);
-        syncRequestsPage();
-        loadConfigurationScript();
-        initializeConfigurationTabs();
-        window.setInterval(loadConfigurationScript, 500);
+
+        window.addEventListener("resize", function () {
+            const view = document.getElementById(VIEW_ID);
+            if (view && !view.hidden) {
+                positionView(view);
+            }
+        });
     }
 
     if (document.readyState === "loading") {

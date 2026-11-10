@@ -1,20 +1,26 @@
-﻿<div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-button,emby-input,emby-select">
+﻿<div id="requestsConfigPage" data-role="page" class="page type-interior pluginConfigurationPage requestsConfigPage" data-require="emby-button,emby-input,emby-select,emby-checkbox" data-controller="__plugin/RequestsConfigurationjs">
     <div data-role="content">
         <div class="content-primary">
             <h2 class="sectionTitle">Jellyfin Requests</h2>
-            <div class="buttonGroup">
-                <button type="button" class="raised emby-button requests-config-tab" data-tab="general">General</button>
-                <button type="button" class="raised emby-button requests-config-tab" data-tab="requests">Requests</button>
+
+            <div class="requests-config-tabs" role="tablist">
+                <button type="button" is="emby-button" class="raised emby-button requests-config-tab requests-config-tab-active" data-tab="general" role="tab" aria-selected="true">General</button>
+                <button type="button" is="emby-button" class="raised emby-button requests-config-tab" data-tab="requests" role="tab" aria-selected="false">Requests</button>
             </div>
-            <section class="verticalSection requests-config-panel" data-panel="general">
-                <h3>General</h3>
-                <dl>
+
+            <section class="verticalSection requests-config-panel" data-panel="general" role="tabpanel">
+                <h3 class="requests-config-section-title">General</h3>
+                <dl class="requests-config-info">
                     <dt>Plugin Version</dt>
                     <dd id="requestsGeneralVersion">Loading...</dd>
                     <dt>Search Provider Status</dt>
                     <dd id="requestsGeneralProviderStatus">Loading...</dd>
+                    <dt>Total Requests</dt>
+                    <dd id="requestsGeneralTotals">Loading...</dd>
                 </dl>
+
                 <h3 class="requests-config-section-title">Media Options</h3>
+                <p class="fieldDescription">Choose which media types users can search for and request. At least one must stay enabled.</p>
                 <div class="requests-media-options">
                     <label class="requests-media-option">
                         <input id="requestsEnableMovies" type="checkbox">
@@ -25,68 +31,95 @@
                         <span>TV Shows</span>
                     </label>
                 </div>
+
                 <h3 class="requests-config-section-title">Media Quality Options</h3>
-                <div id="requestsQualityOptions" class="verticalSection"></div>
-                <button type="button" class="requests-quality-add" id="requestsQualityAdd">Add</button>
+                <p class="fieldDescription">Quality choices offered to users when they submit a request. Changes save automatically.</p>
+                <div id="requestsQualityOptions"></div>
+                <button type="button" is="emby-button" class="raised emby-button requests-quality-add" id="requestsQualityAdd">Add Quality Option</button>
+                <div id="requestsGeneralMessage" class="fieldDescription requests-config-message" role="status" aria-live="polite"></div>
             </section>
 
-            <section class="verticalSection requests-config-panel" data-panel="requests" hidden>
-                <h3>Requests</h3>
+            <section class="verticalSection requests-config-panel" data-panel="requests" role="tabpanel" hidden>
+                <h3 class="requests-config-section-title">Requests</h3>
                 <div class="requests-admin-toolbar">
-                    <input id="requestsAdminSearch" type="search" is="emby-input" placeholder="Search title, requester, notes, or provider">
-                    <select id="requestsAdminStatus" is="emby-select" aria-label="Status filter">
+                    <input id="requestsAdminSearch" type="search" placeholder="Search title, requester, notes, or provider ID" aria-label="Search requests">
+                    <select id="requestsAdminStatus" aria-label="Status filter">
                         <option value="">All statuses</option>
                         <option>Pending</option><option>Approved</option><option>Denied</option>
                         <option>InProgress</option><option>Available</option><option>Completed</option><option>Cancelled</option>
                     </select>
-                    <select id="requestsAdminMediaType" is="emby-select" aria-label="Media type filter">
-                        <option value="">All media types</option><option>Movie</option><option>TV Show</option>
+                    <select id="requestsAdminMediaType" aria-label="Media type filter">
+                        <option value="">All media types</option><option value="Movie">Movie</option><option value="TV Show">TV Show</option>
                     </select>
-                    <hr class="requests-admin-sort-divider">
-                    <label class="fieldDescription" for="requestsAdminSort">Sort by</label>
-                    <select id="requestsAdminSort" is="emby-select" aria-label="Sort by">
-                        <option value="date">Request Date</option><option value="title">Title</option>
-                        <option value="requester">Requester</option><option value="status">Status</option>
+                    <select id="requestsAdminSort" aria-label="Sort by">
+                        <option value="date">Sort: Request Date</option><option value="title">Sort: Title</option>
+                        <option value="requester">Sort: Requester</option><option value="status">Sort: Status</option>
                     </select>
-                    <button id="requestsAdminSortDirection" type="button" class="raised emby-button">Descending</button>
+                    <button id="requestsAdminSortDirection" type="button" is="emby-button" class="raised emby-button">Descending</button>
+                    <button id="requestsAdminRefresh" type="button" is="emby-button" class="raised emby-button">Refresh</button>
                 </div>
-                <table class="tblSettings">
-                    <thead><tr>
-                        <th>Poster</th><th>Title</th><th>Requested By</th>
-                        <th>Request Date</th><th>Media Quality</th><th>Notes</th><th>Status</th><th>Actions</th>
-                    </tr></thead>
-                    <tbody id="requestsAdminRows"></tbody>
-                </table>
+                <div id="requestsAdminMessage" class="fieldDescription requests-config-message" role="status" aria-live="polite"></div>
+                <div class="requests-admin-table-wrap">
+                    <table class="requests-admin-table">
+                        <thead><tr>
+                            <th>Poster</th><th>Title</th><th>Requested By</th>
+                            <th>Request Date</th><th>Scope</th><th>Quality</th><th>Notes</th><th>Status</th><th></th>
+                        </tr></thead>
+                        <tbody id="requestsAdminRows"></tbody>
+                    </table>
+                </div>
             </section>
-
         </div>
     </div>
 
-    <div id="requestsAdminDetails" class="requests-modal" hidden role="dialog" aria-modal="true">
-        <div class="requests-modal-backdrop"></div>
-        <div class="requests-modal-panel">
+    <div id="requestsAdminDetails" class="requests-admin-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsDetailsTitle">
+        <div class="requests-admin-modal-backdrop" data-close-details></div>
+        <div class="requests-admin-modal-panel">
             <h3 id="requestsDetailsTitle">Request Details</h3>
-            <img id="requestsDetailsPoster" class="requests-card-poster" alt="" hidden>
-            <dl id="requestsDetailsList"></dl>
-            <button id="requestsDetailsClose" type="button" class="raised emby-button">Close</button>
+            <img id="requestsDetailsPoster" class="requests-admin-details-poster" alt="" hidden>
+            <dl id="requestsDetailsList" class="requests-config-info"></dl>
+            <button id="requestsDetailsClose" type="button" is="emby-button" class="raised emby-button" data-close-details>Close</button>
         </div>
     </div>
 
     <style>
-        .requests-config-section-title { font-size: 1.35em; margin: 1.5em 0 .75em; }
-        .requests-media-options { background: rgba(255,255,255,.08); border-radius: .25em; display: flex; flex-direction: column; gap: 0; margin-bottom: 1em; padding: 1.25em 1.5em; }
-        .requests-media-option { align-items: center; display: flex; gap: .85em; min-height: 3.25em; }
-        .requests-media-option input { accent-color: #00a4dc; height: 1.75em; margin: 0; width: 1.75em; }
-        .requests-media-option span { font-size: 1.15em; }
-        .requests-quality-row { align-items: center; display: flex; gap: .75em; margin: .5em 0; max-width: 42em; }
-        .requests-quality-row input { flex: 1; }
-        .requests-quality-delete { min-width: 2.5em; }
-        .requests-quality-add { background: transparent; border: 1px solid currentColor; border-radius: .25em; color: inherit; margin-top: .75em; padding: .6em 1.5em; }
-        .requests-status-approved { color: #66bb6a; }
-        .requests-status-denied { color: #ef5350; }
-        .requests-status-in-progress { color: #ffa726; }
-        .requests-status-completed { color: #42a5f5; }
-        .requests-status-pending { color: #bdbdbd; }
+        .requestsConfigPage .requests-config-tabs { display: flex; gap: .5em; margin-bottom: 1em; }
+        .requestsConfigPage .requests-config-tab { margin: 0; }
+        .requestsConfigPage .requests-config-tab-active { background: #00a4dc; color: #fff; }
+        .requestsConfigPage .requests-config-section-title { font-size: 1.35em; margin: 1.5em 0 .75em; }
+        .requestsConfigPage .requests-config-info { display: grid; grid-template-columns: max-content 1fr; gap: .4em 1.5em; margin: 0; }
+        .requestsConfigPage .requests-config-info dt { font-weight: 600; }
+        .requestsConfigPage .requests-config-info dd { margin: 0; overflow-wrap: anywhere; }
+        .requestsConfigPage .requests-config-message { min-height: 1.5em; margin-top: .75em; }
+        .requestsConfigPage .requests-config-message.error { color: #ef5350; }
+        .requestsConfigPage .requests-media-options { background: rgba(255,255,255,.08); border-radius: .25em; display: flex; flex-direction: column; margin-bottom: 1em; padding: 1em 1.5em; }
+        .requestsConfigPage .requests-media-option { align-items: center; cursor: pointer; display: flex; gap: .85em; min-height: 2.75em; }
+        .requestsConfigPage .requests-media-option input { accent-color: #00a4dc; height: 1.4em; margin: 0; width: 1.4em; }
+        .requestsConfigPage .requests-media-option span { font-size: 1.1em; }
+        .requestsConfigPage .requests-quality-row { align-items: center; display: flex; gap: .75em; margin: .5em 0; max-width: 42em; }
+        .requestsConfigPage input[type="text"], .requestsConfigPage input[type="search"], .requestsConfigPage select {
+            background: #292929; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; color: inherit; font: inherit; padding: .5em .65em;
+        }
+        .requestsConfigPage .requests-quality-row input { flex: 1; }
+        .requestsConfigPage .requests-quality-add { margin-top: .5em; }
+        .requestsConfigPage .requests-admin-toolbar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .5em; }
+        .requestsConfigPage .requests-admin-toolbar input { flex: 1 1 16em; }
+        .requestsConfigPage .requests-admin-toolbar .emby-button { margin: 0; }
+        .requestsConfigPage .requests-admin-table-wrap { overflow-x: auto; }
+        .requestsConfigPage .requests-admin-table { border-collapse: collapse; width: 100%; }
+        .requestsConfigPage .requests-admin-table th, .requestsConfigPage .requests-admin-table td { border-bottom: 1px solid rgba(255,255,255,.1); padding: .5em; text-align: left; vertical-align: middle; }
+        .requestsConfigPage .requests-admin-table img { border-radius: .2em; display: block; width: 56px; }
+        .requestsConfigPage .requests-admin-title { background: none; border: 0; color: #00a4dc; cursor: pointer; font: inherit; padding: 0; text-align: left; }
+        .requestsConfigPage .requests-admin-empty { opacity: .7; padding: 1em .5em; }
+        .requestsConfigPage .requests-admin-modal[hidden] { display: none; }
+        .requestsConfigPage .requests-admin-modal { inset: 0; position: fixed; z-index: 1000; display: flex; align-items: center; justify-content: center; }
+        .requestsConfigPage .requests-admin-modal-backdrop { background: rgba(0,0,0,.6); inset: 0; position: absolute; }
+        .requestsConfigPage .requests-admin-modal-panel { background: #202020; border-radius: .4em; max-height: 85vh; max-width: 40em; overflow: auto; padding: 1.5em; position: relative; width: calc(100% - 2em); }
+        .requestsConfigPage .requests-admin-details-poster { float: right; margin: 0 0 1em 1em; max-width: 120px; border-radius: .25em; }
+        .requestsConfigPage .requests-status-approved { color: #66bb6a; }
+        .requestsConfigPage .requests-status-denied, .requestsConfigPage .requests-status-cancelled { color: #ef5350; }
+        .requestsConfigPage .requests-status-in-progress { color: #ffa726; }
+        .requestsConfigPage .requests-status-available, .requestsConfigPage .requests-status-completed { color: #42a5f5; }
+        .requestsConfigPage .requests-status-pending { color: #bdbdbd; }
     </style>
-
 </div>

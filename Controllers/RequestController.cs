@@ -78,7 +78,16 @@ public sealed class RequestController : ControllerBase
     {
         if (model is null || string.IsNullOrWhiteSpace(model.Title))
         {
-            return BadRequest("A title is required.");
+            return BadRequest(new { error = "A title is required." });
+        }
+
+        var category = model.MediaCategory ?? InferMediaCategory(model.MediaType);
+        var configuration = Plugin.Instance?.Configuration;
+        if (configuration is not null
+            && ((category == MediaCategory.Movies && !configuration.EnableMovies)
+                || (category == MediaCategory.TVShows && !configuration.EnableTvShows)))
+        {
+            return BadRequest(new { error = "Requests for this media type are currently disabled." });
         }
 
         var userId = GetUserId();
@@ -103,12 +112,12 @@ public sealed class RequestController : ControllerBase
                 : new Dictionary<string, string>(model.ProviderIds, StringComparer.OrdinalIgnoreCase),
             ProductionYear = model.ProductionYear,
             SourceProvider = model.SourceProvider?.Trim() ?? string.Empty,
-            MediaCategory = model.MediaCategory ?? InferMediaCategory(model.MediaType),
-            RequestScope = model.RequestScope ?? InferRequestScope(model.MediaCategory ?? InferMediaCategory(model.MediaType)),
-            RequestKind = model.RequestKind ?? InferRequestKind(model.RequestScope, model.MediaCategory ?? InferMediaCategory(model.MediaType)),
+            MediaCategory = category,
+            RequestScope = model.RequestScope ?? InferRequestScope(category),
+            RequestKind = model.RequestKind ?? InferRequestKind(model.RequestScope, category),
             RequestedSeasonNumbers = model.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? new List<int>(),
-            RequestedEpisodeIds = model.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
-            RequestedEpisodeNames = model.RequestedEpisodeNames?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
+            RequestedEpisodeIds = model.RequestedEpisodeIds?.Select(value => value.Trim()).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
+            RequestedEpisodeNames = model.RequestedEpisodeNames?.Select(value => value.Trim()).Where(value => value.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>(),
             Note = model.Note?.Trim() ?? string.Empty,
             MediaQuality = model.MediaQuality?.Trim() ?? string.Empty
         };
@@ -206,7 +215,7 @@ public sealed class RequestController : ControllerBase
 
         if (model is null || !Enum.IsDefined(model.Status))
         {
-            return BadRequest("A valid request status is required.");
+            return BadRequest(new { error = "A valid request status is required." });
         }
 
         var updated = _requestService.UpdateStatus(id, model.Status);
@@ -256,7 +265,8 @@ public sealed class RequestController : ControllerBase
         var claims = User.Claims;
         foreach (var claim in claims)
         {
-            if ((claim.Type == ClaimTypes.NameIdentifier || claim.Type == "UserId" || claim.Type == "uid"
+            // Jellyfin's authentication handler stores the user id in the "Jellyfin-UserId" claim.
+            if ((claim.Type == "Jellyfin-UserId" || claim.Type == ClaimTypes.NameIdentifier || claim.Type == "UserId" || claim.Type == "uid"
                     || claim.Type.EndsWith("/nameidentifier", StringComparison.OrdinalIgnoreCase))
                 && !string.IsNullOrWhiteSpace(claim.Value))
             {
@@ -378,20 +388,28 @@ public sealed class CreateRequestModel
     [JsonPropertyName("sourceProvider")]
     public string? SourceProvider { get; set; }
 
+    [JsonPropertyName("mediaCategory")]
     public MediaCategory? MediaCategory { get; set; }
 
+    [JsonPropertyName("requestScope")]
     public RequestScope? RequestScope { get; set; }
 
+    [JsonPropertyName("requestKind")]
     public RequestKind? RequestKind { get; set; }
 
+    [JsonPropertyName("requestedSeasonNumbers")]
     public List<int>? RequestedSeasonNumbers { get; set; }
 
+    [JsonPropertyName("requestedEpisodeIds")]
     public List<string>? RequestedEpisodeIds { get; set; }
 
+    [JsonPropertyName("requestedEpisodeNames")]
     public List<string>? RequestedEpisodeNames { get; set; }
 
+    [JsonPropertyName("note")]
     public string? Note { get; set; }
 
+    [JsonPropertyName("mediaQuality")]
     public string? MediaQuality { get; set; }
 }
 
@@ -440,5 +458,6 @@ public sealed class UpdateRequestModel
 
 public sealed class UpdateStatusModel
 {
+    [JsonPropertyName("status")]
     public RequestStatus Status { get; set; }
 }

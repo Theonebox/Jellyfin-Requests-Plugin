@@ -1,324 +1,488 @@
-﻿        (function () {
-    window.RequestsConfigurationScriptLoaded = true;
-    let requests = [];
-    let qualityOptions = [];
-    let descending = true;
-    let initializedPage;
+﻿// Administrator settings controller for the Requests plugin.
+//
+// Jellyfin loads this file as an ES module through the page's
+// data-controller="__plugin/RequestsConfigurationjs" attribute and creates
+// one controller per view. All listeners are bound to elements inside the
+// view, so nothing outlives the page when Jellyfin destroys it.
 
-            function headers() {
-                const api = window.ApiClient;
-                return api && typeof api.getRequestHeaders === "function"
-                    ? api.getRequestHeaders() || {}
-                    : {};
+const STATUS_OPTIONS = ["Pending", "Approved", "Denied", "InProgress", "Available", "Completed", "Cancelled"];
+
+function apiUrl(path) {
+    const client = window.ApiClient;
+    const relative = String(path).replace(/^\/+/, "");
+    return client && typeof client.getUrl === "function" ? client.getUrl(relative) : "/" + relative;
+}
+
+function authHeaders() {
+    const client = window.ApiClient;
+    const token = client && typeof client.accessToken === "function" ? client.accessToken() : "";
+    return token ? { Authorization: `MediaBrowser Token="${token}"` } : {};
+}
+
+async function api(path, method, body) {
+    const headers = { Accept: "application/json", ...authHeaders() };
+    if (body !== undefined) {
+        headers["Content-Type"] = "application/json";
+    }
+
+    const response = await fetch(apiUrl(path), {
+        method: method || "GET",
+        headers: headers,
+        body: body === undefined ? undefined : JSON.stringify(body)
+    });
+
+    const text = await response.text();
+    let data = null;
+    if (text) {
+        try {
+            data = JSON.parse(text);
+        } catch (_) {
+            data = text;
+        }
+    }
+
+    if (!response.ok) {
+        const message = data && typeof data === "object" && (data.error || data.Error || data.title || data.message);
+        throw new Error(`${message || "Request failed"} (${response.status})`);
+    }
+
+    return data;
+}
+
+// Jellyfin serializes API responses in PascalCase unless the client asks for
+// camelCase, so read either form.
+function value(item, name) {
+    if (!item) {
+        return undefined;
+    }
+    const upper = name.charAt(0).toUpperCase() + name.slice(1);
+    return item[name] !== undefined ? item[name] : item[upper];
+}
+
+function escapeHtml(text) {
+    const span = document.createElement("span");
+    span.textContent = text == null ? "" : String(text);
+    return span.innerHTML;
+}
+
+function formatDate(input) {
+    if (!input) {
+        return "Unknown";
+    }
+    const date = new Date(input);
+    return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+}
+
+function scopeLabel(request) {
+    const current = value(request, "requestScope");
+    if (current === "SeasonSelection") {
+        return "Seasons " + (value(request, "requestedSeasonNumbers") || []).join(", ");
+    }
+    if (current === "EpisodeSelection") {
+        return "Episodes " + (value(request, "requestedEpisodeNames") || value(request, "requestedEpisodeIds") || []).join(", ");
+    }
+    return current === "EntireSeries" ? "Entire Series" : "Entire Movie";
+}
+
+function statusClass(status) {
+    return "requests-status-" + String(status || "Pending")
+        .replace(/([a-z])([A-Z])/g, "$1-$2")
+        .toLowerCase()
+        .replace(/[^a-z-]/g, "");
+}
+
+export default function (view) {
+    const $ = (selector) => view.querySelector(selector);
+
+    const state = {
+        requests: [],
+        qualityOptions: [],
+        descending: true,
+        generalLoaded: false,
+        isAdministrator: null
+    };
+
+    function setMessage(selector, text, isError) {
+        const element = $(selector);
+        element.textContent = text || "";
+        element.classList.toggle("error", Boolean(isError));
+    }
+
+    function showLoading(show) {
+        const loading = window.Dashboard;
+        if (loading && typeof loading.showLoadingMsg === "function" && typeof loading.hideLoadingMsg === "function") {
+            if (show) {
+                loading.showLoadingMsg();
+            } else {
+                loading.hideLoadingMsg();
             }
+        }
+    }
 
-            async function get(url) {
-                if (window.ApiClient && typeof window.ApiClient.ajax === "function") {
-                    return window.ApiClient.ajax({ url: url, type: "GET", dataType: "json" });
-                }
-                const response = await fetch(url, { credentials: "same-origin", headers: headers() });
-                if (!response.ok) throw new Error("Unable to load administrator data.");
-                return response.json();
-            }
+    // ---------- Tabs ----------
 
-            async function ensureAdministrator() {
-                const user = await get("/Users/Me");
-                return !!(user.Policy && user.Policy.IsAdministrator);
-            }
+    function selectTab(name) {
+        view.querySelectorAll(".requests-config-tab").forEach(function (tab) {
+            const active = tab.dataset.tab === name;
+            tab.classList.toggle("requests-config-tab-active", active);
+            tab.setAttribute("aria-selected", String(active));
+        });
+        view.querySelectorAll(".requests-config-panel").forEach(function (panel) {
+            panel.hidden = panel.dataset.panel !== name;
+        });
+        if (name === "requests") {
+            loadRequests();
+        }
+    }
 
-            async function send(url, method, body) {
-                if (window.ApiClient && typeof window.ApiClient.ajax === "function") {
-                    return window.ApiClient.ajax({
-                        url: url,
-                        type: method,
-                        dataType: "json",
-                        contentType: "application/json",
-                        data: body === undefined ? undefined : JSON.stringify(body)
-                    });
-                }
-                const response = await fetch(url, {
-                    method: method, credentials: "same-origin",
-                    headers: { ...headers(), "Content-Type": "application/json" },
-                    body: body === undefined ? undefined : JSON.stringify(body)
-                });
-                if (!response.ok) throw new Error("Unable to update request.");
-                return response.status === 204 ? null : response.json();
-            }
+    // ---------- General tab ----------
 
-            function value(item, name) {
-                const upper = name.charAt(0).toUpperCase() + name.slice(1);
-                return item[name] !== undefined ? item[name] : item[upper];
-            }
+    function renderQualityOptions() {
+        const target = $("#requestsQualityOptions");
+        target.replaceChildren();
+        state.qualityOptions.forEach(function (option, index) {
+            const row = document.createElement("div");
+            row.className = "requests-quality-row";
 
-            function escape(valueToEscape) {
-                const span = document.createElement("span");
-                span.textContent = valueToEscape == null ? "" : String(valueToEscape);
-                return span.innerHTML;
-            }
-
-            function scope(request) {
-                const current = value(request, "requestScope");
-                if (current === "SeasonSelection") return "Seasons " + (value(request, "requestedSeasonNumbers") || []).join(", ");
-                if (current === "EpisodeSelection") return "Episodes " + (value(request, "requestedEpisodeNames") || []).join(", ");
-                return current === "EntireMovie" ? "Entire Movie" : "Entire Series";
-            }
-
-            function statusClass(status) {
-                return "requests-status-" + String(status || "Pending")
-                    .replace(/([a-z])([A-Z])/g, "$1-$2")
-                    .toLowerCase()
-                    .replace(/[^a-z-]/g, "");
-            }
-
-            function renderQualityOptions(page) {
-                const target = page.querySelector("#requestsQualityOptions");
-                target.replaceChildren();
-                qualityOptions.forEach(function (option, index) {
-                    const row = document.createElement("div");
-                    row.className = "requests-quality-row";
-                    const input = document.createElement("input");
-                    input.type = "text";
-                    input.value = option;
-                    input.setAttribute("is", "emby-input");
-                    input.setAttribute("aria-label", `Media quality option ${index + 1}`);
-                    const deleteButton = document.createElement("button");
-                    deleteButton.type = "button";
-                    deleteButton.className = "raised emby-button requests-quality-delete";
-                    deleteButton.textContent = "X";
-                    input.onchange = async function () {
-                        const value = input.value.trim();
-                        if (!value) {
-                            input.value = qualityOptions[index];
-                            return;
-                        }
-                        qualityOptions[index] = value;
-                        await saveQualityOptions(page);
-                    };
-                    deleteButton.onclick = async function () {
-                        qualityOptions.splice(index, 1);
-                        await saveQualityOptions(page);
-                    };
-                    row.append(input, deleteButton);
-                    target.append(row);
-                });
-            }
-
-            async function loadGeneral(page) {
-                function loadResult(url) {
-                    return get(url)
-                        .then(function (value) { return { success: true, value: value }; })
-                        .catch(function (error) { return { success: false, error: error }; });
-                }
-
-                const results = await Promise.all([
-                    loadResult("/Requests/Configuration/QualityOptions"),
-                    loadResult("/Requests/Configuration/Diagnostics"),
-                    loadResult("/Requests/Configuration/MediaOptions")
-                ]);
-
-                const optionsResult = results[0];
-                if (optionsResult.success) {
-                    qualityOptions = optionsResult.value.options || [];
-                    renderQualityOptions(page);
-                } else {
-                    page.querySelector("#requestsQualityOptions").textContent = optionsResult.error && optionsResult.error.message
-                        ? optionsResult.error.message
-                        : "Unable to load media quality options.";
-                }
-
-                const diagnosticsResult = results[1];
-                page.querySelector("#requestsGeneralVersion").textContent = diagnosticsResult.success
-                    ? diagnosticsResult.value.pluginVersion || "Unknown"
-                    : diagnosticsResult.error && diagnosticsResult.error.message
-                        ? diagnosticsResult.error.message
-                        : "Unavailable";
-
-                const mediaOptionsResult = results[2];
-                if (mediaOptionsResult.success) {
-                    page.querySelector("#requestsEnableMovies").checked = Boolean(mediaOptionsResult.value.movies);
-                    page.querySelector("#requestsEnableTvShows").checked = Boolean(mediaOptionsResult.value.tvShows);
-                } else {
-                    page.querySelector("#requestsEnableMovies").disabled = true;
-                    page.querySelector("#requestsEnableTvShows").disabled = true;
-                }
-
-                try {
-                    const providers = await get("/Requests/Search/Providers");
-                    page.querySelector("#requestsGeneralProviderStatus").textContent = providers.status || "Unknown";
-                } catch (error) {
-                    page.querySelector("#requestsGeneralProviderStatus").textContent = error.message;
-                }
-            }
-
-            async function saveQualityOptions(page) {
-                await send("/Requests/Configuration/QualityOptions", "PUT", { options: qualityOptions });
-                renderQualityOptions(page);
-            }
-
-            async function saveMediaOptions(page) {
-                const movies = page.querySelector("#requestsEnableMovies").checked;
-                const tvShows = page.querySelector("#requestsEnableTvShows").checked;
-                if (!movies && !tvShows) {
-                    page.querySelector("#requestsEnableMovies").checked = true;
-                    throw new Error("At least one media type must remain enabled.");
-                }
-                await send("/Requests/Configuration/MediaOptions", "PUT", { movies: movies, tvShows: tvShows });
-            }
-
-            function renderDetails(page, request) {
-                const list = page.querySelector("#requestsDetailsList");
-                const providerIds = value(request, "providerIds") || {};
-                const history = (value(request, "statusHistory") || []).map(function (change) {
-                    return `${value(change, "status")} (${new Date(value(change, "changedAtUtc")).toLocaleString()})`;
-                }).join(" -> ");
-                list.innerHTML = [
-                    ["Overview", value(request, "overview")],
-                    ["Requester", `${value(request, "userName")} (${value(request, "userId")})`],
-                    ["Creation Date", new Date(value(request, "requestedAtUtc")).toLocaleString()],
-                    ["Media Type", value(request, "mediaType")],
-                    ["Scope", scope(request)],
-                    ["Status", value(request, "status")],
-                    ["Status History", history || "No history"],
-                    ["Provider", value(request, "sourceProvider")],
-                    ["Provider IDs", Object.entries(providerIds).map(function (pair) { return `${pair[0]}: ${pair[1]}`; }).join(", ")],
-                    ["Notes", value(request, "note")]
-                ].map(function (item) { return `<dt>${escape(item[0])}</dt><dd>${escape(item[1] || "Not specified")}</dd>`; }).join("");
-                page.querySelector("#requestsDetailsTitle").textContent = value(request, "title") || "Request Details";
-                const poster = page.querySelector("#requestsDetailsPoster");
-                poster.hidden = !value(request, "posterUrl");
-                poster.src = value(request, "posterUrl") || "";
-                poster.alt = value(request, "title") || "Requested media";
-                page.querySelector("#requestsAdminDetails").hidden = false;
-            }
-
-            function renderRequests(page) {
-                const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
-                const statusFilter = page.querySelector("#requestsAdminStatus").value;
-                const mediaFilter = page.querySelector("#requestsAdminMediaType").value;
-                const sort = page.querySelector("#requestsAdminSort").value;
-                const filtered = requests.filter(function (request) {
-                    const title = String(value(request, "title") || "").toLowerCase();
-                    const requester = String(value(request, "userName") || "").toLowerCase();
-                    const notes = String(value(request, "note") || "").toLowerCase();
-                    const provider = JSON.stringify(value(request, "providerIds") || {}).toLowerCase();
-                    const date = value(request, "requestedAtUtc") || "";
-                    return (!query || title.includes(query) || requester.includes(query) || notes.includes(query) || provider.includes(query))
-                        && (!statusFilter || value(request, "status") === statusFilter)
-                        && (!mediaFilter || value(request, "mediaType") === mediaFilter);
-                }).sort(function (left, right) {
-                    const leftValue = sort === "date" ? value(left, "requestedAtUtc") : sort === "title" ? value(left, "title") : sort === "requester" ? value(left, "userName") : value(left, "status");
-                    const rightValue = sort === "date" ? value(right, "requestedAtUtc") : sort === "title" ? value(right, "title") : sort === "requester" ? value(right, "userName") : value(right, "status");
-                    return (String(leftValue || "").localeCompare(String(rightValue || ""))) * (descending ? -1 : 1);
-                });
-                const rows = page.querySelector("#requestsAdminRows");
-                rows.replaceChildren();
-                filtered.forEach(function (request) {
-                    const id = value(request, "id");
-                    const poster = value(request, "posterUrl");
-                    const row = document.createElement("tr");
-                    const status = value(request, "status") || "Pending";
-                    const quality = value(request, "mediaQuality") || "";
-                    const notes = value(request, "note") || "";
-                    const statusOptions = ["Pending", "Approved", "Denied", "InProgress", "Available", "Completed", "Cancelled"];
-                    row.innerHTML = `<td>${poster ? `<img src="${escape(poster)}" width="56" alt="">` : ""}</td>`
-                        + `<td><button type="button" class="raised emby-button" data-details>${escape(value(request, "title"))}</button></td>`
-                        + `<td>${escape(value(request, "userName"))}</td>`
-                        + `<td>${escape(new Date(value(request, "requestedAtUtc")).toLocaleString())}</td>`
-                        + `<td>${escape(quality)}</td><td>${escape(notes)}</td>`
-                        + `<td><select is="emby-select" class="${statusClass(status)}" data-status aria-label="Request status">${statusOptions.map(function (option) {
-                            return `<option value="${option}"${option === status ? " selected" : ""}>${option}</option>`;
-                        }).join("")}</select></td>`
-                        + `<td><button type="button" class="raised emby-button" data-delete aria-label="Delete request" title="Delete request">X</button></td>`;
-                    row.querySelector("[data-details]").onclick = function () { renderDetails(page, request); };
-                    row.querySelector("[data-status]").onchange = async function (event) {
-                        const select = event.target;
-                        const previousStatus = status;
-                        select.disabled = true;
-                        try {
-                            await send(`/Requests/${id}/status`, "PUT", { status: select.value });
-                            request.status = select.value;
-                            select.className = statusClass(select.value);
-                        } catch (error) {
-                            select.value = previousStatus;
-                            window.alert(error.message);
-                        } finally {
-                            select.disabled = false;
-                        }
-                    });
-                    row.querySelector("[data-delete]").onclick = async function () {
-                        const deleteButton = this;
-                        deleteButton.disabled = true;
-                        try {
-                            await send(`/Requests/${id}`, "DELETE");
-                            requests = requests.filter(function (candidate) { return value(candidate, "id") !== id; });
-                            row.remove();
-                        } catch (error) {
-                            deleteButton.disabled = false;
-                            window.alert(error.message);
-                        }
-                    };
-                    rows.append(row);
-                });
-            }
-
-            async function loadRequests(page) {
-                requests = await get("/Requests");
-                renderRequests(page);
-            }
-
-            function initialize(page) {
-                if (initializedPage === page
-                    && page.dataset.requestsConfigInitialized === "true") {
+            const input = document.createElement("input");
+            input.type = "text";
+            input.value = option;
+            input.setAttribute("aria-label", `Media quality option ${index + 1}`);
+            input.addEventListener("change", function () {
+                const next = input.value.trim();
+                if (!next) {
+                    input.value = state.qualityOptions[index];
                     return;
                 }
+                const updated = state.qualityOptions.slice();
+                updated[index] = next;
+                saveQualityOptions(updated);
+            });
 
-                initializedPage = page;
-                page.dataset.requestsConfigInitialized = "true";
-                page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
-                    tab.onclick = function () {
-                        page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
-                        if (tab.dataset.tab === "requests") {
-                            loadRequests(page).catch(function (error) { window.alert(error.message); });
-                        }
-                    };
-                });
-                page.querySelectorAll("#requestsAdminSearch,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) {
-                    control.oninput = function () { renderRequests(page); };
-                    control.onchange = function () { renderRequests(page); };
-                });
-                page.querySelector("#requestsAdminSortDirection").onclick = function () {
-                    descending = !descending;
-                    this.textContent = descending ? "Descending" : "Ascending";
-                    renderRequests(page);
-                };
-                page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
-                page.querySelector("#requestsQualityAdd").onclick = async function () {
-                    qualityOptions.push("new");
-                    await saveQualityOptions(page);
-                };
-                page.querySelector("#requestsEnableMovies").onchange = function () { saveMediaOptions(page).catch(function (error) { window.alert(error.message); }); };
-                page.querySelector("#requestsEnableTvShows").onchange = function () { saveMediaOptions(page).catch(function (error) { window.alert(error.message); }); };
-                ensureAdministrator().then(function (isAdministrator) {
-                    if (!isAdministrator) {
-                        page.innerHTML = '<div class="content-primary"><h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p></div>';
-                        return;
-                    }
-                    return loadGeneral(page);
-                }).catch(function (error) {
-                    page.querySelector("#requestsGeneralVersion").textContent = "Unavailable";
-                    page.querySelector("#requestsGeneralProviderStatus").textContent = error.message || "Unavailable";
-                    window.alert(error.message);
-                });
+            const remove = document.createElement("button");
+            remove.type = "button";
+            remove.className = "raised emby-button";
+            remove.textContent = "Remove";
+            remove.disabled = state.qualityOptions.length <= 1;
+            remove.title = remove.disabled ? "At least one quality option is required." : "Remove this option";
+            remove.addEventListener("click", function () {
+                const updated = state.qualityOptions.slice();
+                updated.splice(index, 1);
+                saveQualityOptions(updated);
+            });
+
+            row.append(input, remove);
+            target.append(row);
+        });
+    }
+
+    async function saveQualityOptions(options, focusLast) {
+        try {
+            const result = await api("Requests/Configuration/QualityOptions", "PUT", { options: options });
+            state.qualityOptions = value(result, "options") || options;
+            setMessage("#requestsGeneralMessage", "Quality options saved.");
+        } catch (error) {
+            setMessage("#requestsGeneralMessage", error.message, true);
+        }
+        renderQualityOptions();
+        if (focusLast) {
+            const inputs = view.querySelectorAll("#requestsQualityOptions input");
+            const last = inputs[inputs.length - 1];
+            if (last) {
+                last.focus();
+                last.select();
+            }
+        }
+    }
+
+    async function saveMediaOptions(changed) {
+        const movies = $("#requestsEnableMovies");
+        const tvShows = $("#requestsEnableTvShows");
+        if (!movies.checked && !tvShows.checked) {
+            changed.checked = true;
+            setMessage("#requestsGeneralMessage", "At least one media type must remain enabled.", true);
+            return;
+        }
+
+        movies.disabled = true;
+        tvShows.disabled = true;
+        try {
+            await api("Requests/Configuration/MediaOptions", "PUT", { movies: movies.checked, tvShows: tvShows.checked });
+            setMessage("#requestsGeneralMessage", "Media options saved.");
+        } catch (error) {
+            changed.checked = !changed.checked;
+            setMessage("#requestsGeneralMessage", error.message, true);
+        } finally {
+            movies.disabled = false;
+            tvShows.disabled = false;
+        }
+    }
+
+    async function loadGeneral() {
+        const settle = (promise) => promise.then(
+            (result) => ({ ok: true, value: result }),
+            (error) => ({ ok: false, error: error }));
+
+        const [quality, diagnostics, media, providers] = await Promise.all([
+            settle(api("Requests/Configuration/QualityOptions")),
+            settle(api("Requests/Configuration/Diagnostics")),
+            settle(api("Requests/Configuration/MediaOptions")),
+            settle(api("Requests/Search/Providers"))
+        ]);
+
+        if (quality.ok) {
+            state.qualityOptions = value(quality.value, "options") || [];
+            renderQualityOptions();
+        } else {
+            $("#requestsQualityOptions").textContent = quality.error.message;
+        }
+
+        if (diagnostics.ok) {
+            const d = diagnostics.value;
+            $("#requestsGeneralVersion").textContent = value(d, "pluginVersion") || "Unknown";
+            $("#requestsGeneralTotals").textContent =
+                `${value(d, "totalRequests") || 0} total · ${value(d, "pendingRequests") || 0} pending · `
+                + `${value(d, "approvedRequests") || 0} approved · ${value(d, "availableRequests") || 0} available`;
+        } else {
+            $("#requestsGeneralVersion").textContent = diagnostics.error.message;
+            $("#requestsGeneralTotals").textContent = "Unavailable";
+        }
+
+        if (media.ok) {
+            $("#requestsEnableMovies").checked = Boolean(value(media.value, "movies"));
+            $("#requestsEnableTvShows").checked = Boolean(value(media.value, "tvShows"));
+        } else {
+            $("#requestsEnableMovies").disabled = true;
+            $("#requestsEnableTvShows").disabled = true;
+            setMessage("#requestsGeneralMessage", media.error.message, true);
+        }
+
+        if (providers.ok) {
+            const sources = value(providers.value, "metadataSources") || [];
+            const status = value(providers.value, "status") || "Unknown";
+            $("#requestsGeneralProviderStatus").textContent = sources.length ? `${status} (${sources.join(", ")})` : status;
+        } else {
+            $("#requestsGeneralProviderStatus").textContent = providers.error.message;
+        }
+    }
+
+    // ---------- Requests tab ----------
+
+    function sortValue(request, sort) {
+        switch (sort) {
+            case "title": return String(value(request, "title") || "").toLowerCase();
+            case "requester": return String(value(request, "userName") || "").toLowerCase();
+            case "status": return String(value(request, "status") || "");
+            default: return String(value(request, "requestedAtUtc") || "");
+        }
+    }
+
+    function renderDetails(request) {
+        const providerIds = value(request, "providerIds") || {};
+        const history = (value(request, "statusHistory") || [])
+            .map((change) => `${value(change, "status")} (${formatDate(value(change, "changedAtUtc"))})`)
+            .join(" → ");
+        const year = value(request, "productionYear");
+
+        $("#requestsDetailsList").innerHTML = [
+            ["Overview", value(request, "overview")],
+            ["Year", year],
+            ["Requester", value(request, "userName")],
+            ["Request Date", formatDate(value(request, "requestedAtUtc"))],
+            ["Media Type", value(request, "mediaType")],
+            ["Scope", scopeLabel(request)],
+            ["Quality", value(request, "mediaQuality")],
+            ["Status", value(request, "status")],
+            ["Status History", history],
+            ["Search Provider", value(request, "sourceProvider")],
+            ["Provider IDs", Object.entries(providerIds).map((pair) => `${pair[0]}: ${pair[1]}`).join(", ")],
+            ["Notes", value(request, "note")]
+        ].map((item) => `<dt>${escapeHtml(item[0])}</dt><dd>${escapeHtml(item[1] || "Not specified")}</dd>`).join("");
+
+        $("#requestsDetailsTitle").textContent = value(request, "title") || "Request Details";
+        const poster = $("#requestsDetailsPoster");
+        const posterUrl = value(request, "posterUrl");
+        poster.hidden = !posterUrl;
+        if (posterUrl) {
+            poster.src = posterUrl;
+        } else {
+            poster.removeAttribute("src");
+        }
+        poster.alt = value(request, "title") || "Requested media";
+        $("#requestsAdminDetails").hidden = false;
+    }
+
+    function buildRow(request) {
+        const id = value(request, "id");
+        const posterUrl = value(request, "posterUrl");
+        const status = value(request, "status") || "Pending";
+        const row = document.createElement("tr");
+
+        row.innerHTML =
+            `<td>${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy">` : ""}</td>`
+            + `<td><button type="button" class="requests-admin-title" data-details>${escapeHtml(value(request, "title") || "Untitled")}</button>`
+            + `<div class="fieldDescription">${escapeHtml(value(request, "mediaType") || "")}</div></td>`
+            + `<td>${escapeHtml(value(request, "userName") || "Unknown")}</td>`
+            + `<td>${escapeHtml(formatDate(value(request, "requestedAtUtc")))}</td>`
+            + `<td>${escapeHtml(scopeLabel(request))}</td>`
+            + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
+            + `<td>${escapeHtml(value(request, "note") || "")}</td>`
+            + `<td><select class="${statusClass(status)}" data-status aria-label="Request status">${STATUS_OPTIONS.map((option) =>
+                `<option value="${option}"${option === status ? " selected" : ""}>${option}</option>`).join("")}</select></td>`
+            + `<td><button type="button" class="raised emby-button" data-delete title="Delete request">Delete</button></td>`;
+
+        row.querySelector("[data-details]").addEventListener("click", function () {
+            renderDetails(request);
+        });
+
+        const select = row.querySelector("[data-status]");
+        select.addEventListener("change", async function () {
+            const previous = value(request, "status") || "Pending";
+            const next = select.value;
+            select.disabled = true;
+            try {
+                const updated = await api(`Requests/${id}/status`, "PUT", { status: next });
+                Object.assign(request, updated || {});
+                request.status = next;
+                request.Status = next;
+                select.className = statusClass(next);
+                setMessage("#requestsAdminMessage", `"${value(request, "title")}" marked ${next}.`);
+            } catch (error) {
+                select.value = previous;
+                setMessage("#requestsAdminMessage", error.message, true);
+            } finally {
+                select.disabled = false;
+            }
+        });
+
+        row.querySelector("[data-delete]").addEventListener("click", async function () {
+            const button = this;
+            if (!window.confirm(`Delete the request for "${value(request, "title")}"? This cannot be undone.`)) {
+                return;
+            }
+            button.disabled = true;
+            try {
+                await api(`Requests/${id}`, "DELETE");
+                state.requests = state.requests.filter((candidate) => value(candidate, "id") !== id);
+                renderRequests();
+                setMessage("#requestsAdminMessage", "Request deleted.");
+            } catch (error) {
+                button.disabled = false;
+                setMessage("#requestsAdminMessage", error.message, true);
+            }
+        });
+
+        return row;
+    }
+
+    function renderRequests() {
+        const query = $("#requestsAdminSearch").value.trim().toLowerCase();
+        const statusFilter = $("#requestsAdminStatus").value;
+        const mediaFilter = $("#requestsAdminMediaType").value;
+        const sort = $("#requestsAdminSort").value;
+        const direction = state.descending ? -1 : 1;
+
+        const filtered = state.requests.filter(function (request) {
+            const haystack = [
+                value(request, "title"),
+                value(request, "userName"),
+                value(request, "note"),
+                Object.values(value(request, "providerIds") || {}).join(" ")
+            ].join(" ").toLowerCase();
+            return (!query || haystack.includes(query))
+                && (!statusFilter || value(request, "status") === statusFilter)
+                && (!mediaFilter || value(request, "mediaType") === mediaFilter);
+        }).sort((left, right) => sortValue(left, sort).localeCompare(sortValue(right, sort)) * direction);
+
+        const rows = $("#requestsAdminRows");
+        rows.replaceChildren();
+        if (filtered.length === 0) {
+            const empty = document.createElement("tr");
+            empty.innerHTML = `<td colspan="9" class="requests-admin-empty">${state.requests.length ? "No requests match the current filters." : "No requests have been submitted yet."}</td>`;
+            rows.append(empty);
+            return;
+        }
+        filtered.forEach((request) => rows.append(buildRow(request)));
+    }
+
+    async function loadRequests() {
+        setMessage("#requestsAdminMessage", "Loading requests...");
+        try {
+            state.requests = (await api("Requests")) || [];
+            setMessage("#requestsAdminMessage", `${state.requests.length} request${state.requests.length === 1 ? "" : "s"}.`);
+        } catch (error) {
+            state.requests = [];
+            setMessage("#requestsAdminMessage", error.message, true);
+        }
+        renderRequests();
+    }
+
+    // ---------- Wiring (runs once per view instance) ----------
+
+    view.querySelectorAll(".requests-config-tab").forEach(function (tab) {
+        tab.addEventListener("click", () => selectTab(tab.dataset.tab));
+    });
+
+    ["#requestsAdminSearch", "#requestsAdminStatus", "#requestsAdminMediaType", "#requestsAdminSort"].forEach(function (selector) {
+        const control = $(selector);
+        control.addEventListener(control.tagName === "SELECT" ? "change" : "input", renderRequests);
+    });
+
+    $("#requestsAdminSortDirection").addEventListener("click", function () {
+        state.descending = !state.descending;
+        this.textContent = state.descending ? "Descending" : "Ascending";
+        renderRequests();
+    });
+
+    $("#requestsAdminRefresh").addEventListener("click", loadRequests);
+
+    view.querySelectorAll("[data-close-details]").forEach(function (element) {
+        element.addEventListener("click", () => { $("#requestsAdminDetails").hidden = true; });
+    });
+
+    $("#requestsQualityAdd").addEventListener("click", function () {
+        let name = "New option";
+        let suffix = 2;
+        const existing = state.qualityOptions.map((option) => option.toLowerCase());
+        while (existing.includes(name.toLowerCase())) {
+            name = `New option ${suffix++}`;
+        }
+        saveQualityOptions(state.qualityOptions.concat(name), true);
+    });
+
+    $("#requestsEnableMovies").addEventListener("change", function () { saveMediaOptions(this); });
+    $("#requestsEnableTvShows").addEventListener("change", function () { saveMediaOptions(this); });
+
+    view.addEventListener("viewshow", async function () {
+        showLoading(true);
+        try {
+            if (state.isAdministrator === null) {
+                const user = await api("Users/Me");
+                const policy = value(user, "policy") || {};
+                state.isAdministrator = Boolean(value(policy, "isAdministrator"));
             }
 
-            function findPage() {
-                const page = document.querySelector("#requestsConfigPage");
-                if (page) {
-                    initialize(page);
-                }
+            if (!state.isAdministrator) {
+                $(".content-primary").innerHTML = '<h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p>';
+                return;
             }
 
-            window.initializeRequestsConfiguration = findPage;
-            findPage();
-            new MutationObserver(findPage).observe(document.documentElement, { childList: true, subtree: true });
-        }());
+            if (!state.generalLoaded) {
+                state.generalLoaded = true;
+                await loadGeneral();
+            }
+
+            const activeTab = view.querySelector(".requests-config-tab-active");
+            if (activeTab && activeTab.dataset.tab === "requests") {
+                await loadRequests();
+            }
+        } catch (error) {
+            state.generalLoaded = false;
+            $("#requestsGeneralVersion").textContent = "Unavailable";
+            $("#requestsGeneralProviderStatus").textContent = "Unavailable";
+            setMessage("#requestsGeneralMessage", error.message, true);
+        } finally {
+            showLoading(false);
+        }
+    });
+}

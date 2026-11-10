@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -139,12 +140,15 @@ public sealed class ConfigurationController : ControllerBase
 
 public sealed class QualityOptionsModel
 {
+    [JsonPropertyName("options")]
     public List<string>? Options { get; set; }
 }
 
 public sealed class MediaOptionsModel
 {
+    [JsonPropertyName("movies")]
     public bool Movies { get; set; }
 
+    [JsonPropertyName("tvShows")]
     public bool TvShows { get; set; }
 }

@@ -25,8 +25,10 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         Instance = this;
         Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
         MetadataIdentify = new MetadataIdentifyService(providerManager);
+        // The availability cache is filled by the "Requests: Detect library media" scheduled
+        // task (startup + daily) and kept current through library events. Scanning the whole
+        // library here would block plugin construction during server start-up.
         LibraryAvailability = new LibraryAvailabilityService(libraryManager);
-        LibraryAvailability.Refresh();
     }
 
     public override string Name => "Requests";
@@ -43,6 +45,12 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 Name = "RequestsConfiguration",
                 DisplayName = "Requests",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
+            },
+            new PluginPageInfo
+            {
+                // Loaded as an ES module via data-controller="__plugin/RequestsConfigurationjs".
+                Name = "RequestsConfigurationjs",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.js"
             }
         };
     }

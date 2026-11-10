@@ -16,17 +16,13 @@
     const requestedKeys = new Set();
     let mediaQualityOptions = ["720p", "1080p", "4K"];
 
+    // Builds an absolute API URL that respects the server's base path (e.g. /jellyfin).
     function apiUrl(url) {
         const apiClient = window.ApiClient;
-        let serverAddress = "";
-
-        if (apiClient && typeof apiClient.serverAddress === "function") {
-            serverAddress = apiClient.serverAddress() || "";
-        }
-
-        return serverAddress
-            ? `${serverAddress.replace(/\/+$/, "")}${url}`
-            : url;
+        const relative = String(url).replace(/^\/+/, "");
+        return apiClient && typeof apiClient.getUrl === "function"
+            ? apiClient.getUrl(relative)
+            : "/" + relative;
     }
 
     function apiHeaders() {
@@ -34,86 +30,36 @@
         const token = apiClient && typeof apiClient.accessToken === "function"
             ? apiClient.accessToken()
             : null;
-        const headers = {};
-
-        if (apiClient && typeof apiClient.getRequestHeaders === "function") {
-            try {
-                Object.assign(headers, apiClient.getRequestHeaders() || {});
-            } catch (_) {
-                // Fall back to the API token header below.
-            }
-        }
-
-        if (token) {
-            headers["X-Emby-Token"] = token;
-        }
-
-        if (!headers["X-Emby-Authorization"] && apiClient && typeof apiClient.authorizationHeader === "function") {
-            try {
-                const authorization = apiClient.authorizationHeader();
-                if (authorization) {
-                    headers["X-Emby-Authorization"] = authorization;
-                }
-            } catch (_) {
-                // The token header remains the fallback.
-            }
-        }
-
-        return headers;
+        return token ? { Authorization: `MediaBrowser Token="${token}"` } : {};
     }
 
     async function apiRequest(url, options) {
-        const apiClient = window.ApiClient;
-        if (apiClient && typeof apiClient.ajax === "function") {
-            const requestOptions = {
-                url: apiUrl(url),
-                type: options && options.method ? options.method : "GET",
-                dataType: "json"
-            };
-
-            if (options && options.body !== undefined) {
-                requestOptions.data = options.body;
-                requestOptions.contentType = options.headers && options.headers["Content-Type"]
-                    ? options.headers["Content-Type"]
-                    : "application/json";
-            }
-
-            try {
-                return await apiClient.ajax(requestOptions);
-            } catch (error) {
-                const response = error && error.responseJSON;
-                const message = response && (response.error || response.message)
-                    ? response.error || response.message
-                    : "Unable to complete the Requests operation.";
-                const statusCode = error && (error.status || error.statusCode);
-                const statusText = error && error.statusText;
-                throw new Error(`${message}${statusCode ? ` (${statusCode}${statusText ? ` ${statusText}` : ""})` : ""}`);
-            }
-        }
-
         const response = await fetch(apiUrl(url), {
             ...options,
             headers: {
+                Accept: "application/json",
                 ...apiHeaders(),
                 ...(options && options.headers ? options.headers : {})
-            },
-            credentials: "same-origin"
+            }
         });
 
-        if (!response.ok) {
-            let message = "Unable to search Jellyfin metadata providers.";
+        // DELETE returns 204 with no body, so never assume JSON.
+        const text = await response.text();
+        let body = null;
+        if (text) {
             try {
-                const body = await response.json();
-                if (body.error || body.message) {
-                    message = body.error || body.message;
-                }
+                body = JSON.parse(text);
             } catch (_) {
-                // Keep the friendly fallback for non-JSON responses.
+                body = text;
             }
-            throw new Error(`${message} (${response.status} ${response.statusText})`);
         }
 
-        return response.status === 204 ? null : response.json();
+        if (!response.ok) {
+            const message = body && typeof body === "object" && (body.error || body.Error || body.message || body.title);
+            throw new Error(`${message || "Unable to complete the Requests operation."} (${response.status})`);
+        }
+
+        return body;
     }
 
     function escapeHtml(value) {
@@ -144,8 +90,14 @@
         };
     }
 
+    // Search results use "Movie"/"TV" while stored requests use "Movie"/"TV Show",
+    // so collapse both to a stable kind before comparing.
+    function mediaKind(mediaType) {
+        return String(mediaType || "").trim().toLowerCase().startsWith("tv") ? "tv" : "movie";
+    }
+
     function mediaKey(item) {
-        return `${String(item.mediaType || "").toLowerCase()}:${item.providerId}`;
+        return `${mediaKind(item.mediaType)}:${item.providerId}`;
     }
 
     function releaseYear(item) {
@@ -187,10 +139,10 @@
 
             requestedKeys.clear();
             for (const request of visibleRequests || []) {
-                const mediaType = String(valueFor(request, "mediaType", "MediaType") || "").toLowerCase();
+                const kind = mediaKind(valueFor(request, "mediaType", "MediaType"));
                 const id = valueFor(request, "providerId", "ProviderId") || valueFor(request, "mediaId", "MediaId") || "";
                 if (id) {
-                    requestedKeys.add(`${mediaType}:${id}`);
+                    requestedKeys.add(`${kind}:${id}`);
                 }
             }
 
@@ -359,6 +311,12 @@
             seasonList.append(label);
         }
 
+        // Reset the form so a previous show's selections don't carry over.
+        page.querySelector('input[name="requestsTvScope"][value="EntireSeries"]').checked = true;
+        seasonList.hidden = true;
+        episodeList.hidden = true;
+        page.querySelector("#requestsEpisodeIds").value = "";
+        page.querySelector("#requestsTvModalTitle").textContent = `Request ${item.name || "TV Show"}`;
         modal.dataset.item = JSON.stringify(item);
         modal.dataset.button = "tv";
         page.querySelector("#requestsTvNote").value = "";
@@ -530,9 +488,7 @@
         requestButton.type = "button";
         requestButton.className = "raised button-submit emby-button requests-card-button";
 
-        const key = mediaKey(item);
-        const normalizedKey = `${String(item.mediaType || "").toLowerCase()}:${item.providerId}`;
-        if (requestedKeys.has(key) || requestedKeys.has(normalizedKey)) {
+        if (requestedKeys.has(mediaKey(item))) {
             requestButton.textContent = "✓ Requested";
             requestButton.disabled = true;
             requestButton.classList.add("requested");
@@ -632,6 +588,30 @@
     page.querySelector(".requests-modal-backdrop").addEventListener("click", closeTvModal);
     page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
     page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
+    document.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+        if (!page.querySelector("#requestsTvModal").hidden) {
+            closeTvModal();
+        } else if (!page.querySelector("#requestsMovieModal").hidden) {
+            closeMovieModal();
+        }
+    });
+
+    // Fired by the header navigation every time the Requests view is opened,
+    // so settings changed by an administrator and request statuses stay fresh.
+    let firstShow = true;
+    page.addEventListener("requestsshow", function () {
+        if (firstShow) {
+            firstShow = false;
+            return;
+        }
+        loadQualityOptions();
+        loadMediaOptions();
+        loadMyRequests();
+    });
+
     loadQualityOptions();
     loadMediaOptions();
     loadMyRequests();

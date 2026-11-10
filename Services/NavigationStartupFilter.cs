@@ -33,6 +33,14 @@ public sealed class NavigationStartupFilter : IStartupFilter
             return;
         }
 
+        // Response compression runs later in the pipeline; if the client advertises gzip/br
+        // we would receive compressed bytes here and corrupt them by treating them as text.
+        // index.html is tiny, so ask for it uncompressed. Conditional headers are removed so
+        // the static file middleware always returns a full 200 body we can rewrite.
+        context.Request.Headers.Remove("Accept-Encoding");
+        context.Request.Headers.Remove("If-None-Match");
+        context.Request.Headers.Remove("If-Modified-Since");
+
         var originalBody = context.Response.Body;
         await using var buffer = new MemoryStream();
         context.Response.Body = buffer;
@@ -44,6 +52,7 @@ public sealed class NavigationStartupFilter : IStartupFilter
             buffer.Position = 0;
 
             if (context.Response.StatusCode != StatusCodes.Status200OK
+                || context.Response.Headers.ContainsKey("Content-Encoding")
                 || !(context.Response.ContentType?.Contains("text/html", StringComparison.OrdinalIgnoreCase) ?? false))
             {
                 await buffer.CopyToAsync(originalBody).ConfigureAwait(false);
@@ -58,7 +67,11 @@ public sealed class NavigationStartupFilter : IStartupFilter
                 var bodyClose = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
                 if (bodyClose >= 0)
                 {
-                    html = html.Insert(bodyClose, $"<script defer>{script}</script>");
+                    html = html.Insert(bodyClose, $"<script>{script}</script>");
+                }
+                else
+                {
+                    _logger.LogWarning("Requests: could not find </body> in the web client index; the header button was not injected.");
                 }
             }
 
