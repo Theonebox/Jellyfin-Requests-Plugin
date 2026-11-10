@@ -104,27 +104,37 @@
             }
 
             async function loadGeneral(page) {
-                const results = await Promise.allSettled([
-                    get("/Requests/Configuration/QualityOptions"),
-                    get("/Requests/Configuration/Diagnostics"),
-                    get("/Requests/Configuration/MediaOptions")
+                function loadResult(url) {
+                    return get(url)
+                        .then(function (value) { return { success: true, value: value }; })
+                        .catch(function (error) { return { success: false, error: error }; });
+                }
+
+                const results = await Promise.all([
+                    loadResult("/Requests/Configuration/QualityOptions"),
+                    loadResult("/Requests/Configuration/Diagnostics"),
+                    loadResult("/Requests/Configuration/MediaOptions")
                 ]);
 
                 const optionsResult = results[0];
-                if (optionsResult.status === "fulfilled") {
+                if (optionsResult.success) {
                     qualityOptions = optionsResult.value.options || [];
                     renderQualityOptions(page);
                 } else {
-                    page.querySelector("#requestsQualityOptions").textContent = optionsResult.reason?.message || "Unable to load media quality options.";
+                    page.querySelector("#requestsQualityOptions").textContent = optionsResult.error && optionsResult.error.message
+                        ? optionsResult.error.message
+                        : "Unable to load media quality options.";
                 }
 
                 const diagnosticsResult = results[1];
-                page.querySelector("#requestsGeneralVersion").textContent = diagnosticsResult.status === "fulfilled"
+                page.querySelector("#requestsGeneralVersion").textContent = diagnosticsResult.success
                     ? diagnosticsResult.value.pluginVersion || "Unknown"
-                    : diagnosticsResult.reason?.message || "Unavailable";
+                    : diagnosticsResult.error && diagnosticsResult.error.message
+                        ? diagnosticsResult.error.message
+                        : "Unavailable";
 
                 const mediaOptionsResult = results[2];
-                if (mediaOptionsResult.status === "fulfilled") {
+                if (mediaOptionsResult.success) {
                     page.querySelector("#requestsEnableMovies").checked = Boolean(mediaOptionsResult.value.movies);
                     page.querySelector("#requestsEnableTvShows").checked = Boolean(mediaOptionsResult.value.tvShows);
                 } else {
@@ -257,11 +267,13 @@
             }
 
             function initialize(page) {
-                if (initializedPage === page) {
+                if (initializedPage === page
+                    && page.dataset.requestsConfigInitialized === "true") {
                     return;
-                };
+                }
 
                 initializedPage = page;
+                page.dataset.requestsConfigInitialized = "true";
                 page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
                     tab.onclick = function () {
                         page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
@@ -306,6 +318,7 @@
                 }
             }
 
+            window.initializeRequestsConfiguration = findPage;
             findPage();
             new MutationObserver(findPage).observe(document.documentElement, { childList: true, subtree: true });
         }());

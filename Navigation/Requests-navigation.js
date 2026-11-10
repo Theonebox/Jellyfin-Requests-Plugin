@@ -3,7 +3,7 @@
 
     const buttonId = "requests-header-button";
     const viewId = "requests-public-view";
-    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.65-settings-fix";
+    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.66-settings-fix";
 
     function isAuthenticated() {
         return typeof ApiClient !== "undefined"
@@ -97,7 +97,7 @@
             container.append(view);
 
             const script = document.createElement("script");
-            script.src = "/Requests/Web/requests.js?v=1.0.0.65-click-fix";
+            script.src = "/Requests/Web/requests.js?v=1.0.0.66-click-fix";
             script.onerror = function () {
                 throw new Error("Unable to load the Requests page script.");
             };
@@ -134,18 +134,44 @@
     }
 
     function loadConfigurationScript() {
-        if (!document.getElementById("requestsConfigPage")
-            || document.querySelector("script[data-requests-configuration-script]")) {
+        const page = document.getElementById("requestsConfigPage");
+        if (!page || page.dataset.requestsConfigInitialized === "true") {
             return;
+        }
+
+        const existingScript = document.querySelector("script[data-requests-configuration-script]");
+        if (existingScript) {
+            existingScript.remove();
         }
 
         const script = document.createElement("script");
         script.src = configurationScriptUrl;
         script.dataset.requestsConfigurationScript = "true";
+        script.onload = function () {
+            if (typeof window.initializeRequestsConfiguration === "function") {
+                window.initializeRequestsConfiguration();
+            }
+        };
         script.onerror = function () {
             console.error("Requests administrator settings script could not be loaded.");
         };
         document.head.append(script);
+    }
+
+    function initializeConfigurationTabs() {
+        const page = document.getElementById("requestsConfigPage");
+        if (!page || page.dataset.requestsConfigTabsInitialized === "true") {
+            return;
+        }
+
+        page.dataset.requestsConfigTabsInitialized = "true";
+        page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
+            tab.addEventListener("click", function () {
+                page.querySelectorAll(".requests-config-panel").forEach(function (panel) {
+                    panel.hidden = panel.dataset.panel !== tab.dataset.tab;
+                });
+            });
+        });
     }
 
     function initialize() {
@@ -153,6 +179,7 @@
         new MutationObserver(function () {
             scheduleAdd();
             loadConfigurationScript();
+            initializeConfigurationTabs();
         }).observe(document.documentElement, { childList: true, subtree: true });
         window.addEventListener("hashchange", function () {
             scheduleAdd();
@@ -161,6 +188,7 @@
         window.addEventListener("pageshow", scheduleAdd);
         syncRequestsPage();
         loadConfigurationScript();
+        initializeConfigurationTabs();
         window.setInterval(loadConfigurationScript, 500);
     }
 
