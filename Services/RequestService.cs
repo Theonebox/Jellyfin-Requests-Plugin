@@ -4,30 +4,36 @@ using Jellyfin.Plugin.Requests.Models;
 
 namespace Jellyfin.Plugin.Requests.Services;
 
-public sealed class RequestService : IRequestService
+/// <summary>
+/// Stores media requests in a JSON file under the plugin configuration directory.
+/// All access is serialized through one lock; callers always receive copies.
+/// </summary>
+public sealed class RequestService
 {
-    private readonly string _filePath;
     private readonly object _syncRoot = new();
     private readonly JsonSerializerOptions _jsonOptions = new()
     {
         WriteIndented = true,
         Converters = { new JsonStringEnumConverter() }
     };
+
     private readonly List<MediaRequest> _requests;
-    public string StorageFilePath => _filePath;
-    public DateTime? LastSaveTimestampUtc { get; private set; }
 
     public RequestService(string pluginConfigurationPath)
     {
-        var requestsDirectory = Path.Combine(pluginConfigurationPath, "Requests");
-        Directory.CreateDirectory(requestsDirectory);
-        _filePath = Path.Combine(requestsDirectory, "requests.json");
+        var directory = Path.Combine(pluginConfigurationPath, "Requests");
+        Directory.CreateDirectory(directory);
+        StorageFilePath = Path.Combine(directory, "requests.json");
         _requests = Load();
-        if (File.Exists(_filePath))
+        if (File.Exists(StorageFilePath))
         {
-            LastSaveTimestampUtc = File.GetLastWriteTimeUtc(_filePath);
+            LastSaveTimestampUtc = File.GetLastWriteTimeUtc(StorageFilePath);
         }
     }
+
+    public string StorageFilePath { get; }
+
+    public DateTime? LastSaveTimestampUtc { get; private set; }
 
     public IReadOnlyList<MediaRequest> GetAll()
     {
@@ -56,9 +62,9 @@ public sealed class RequestService : IRequestService
         lock (_syncRoot)
         {
             Normalize(request);
-            if (IsDuplicateLocked(request))
+            if (IsDuplicate(request))
             {
-                throw new DuplicateRequestException("This media request has already been submitted.");
+                throw new DuplicateRequestException("This has already been requested.");
             }
 
             request.Id = Guid.NewGuid();
@@ -68,55 +74,8 @@ public sealed class RequestService : IRequestService
             {
                 new() { Status = RequestStatus.Pending, ChangedAtUtc = request.RequestedAtUtc }
             };
+
             _requests.Add(Clone(request));
-            Save();
-            return Clone(request);
-        }
-    }
-
-    public MediaRequest? Update(MediaRequest update)
-    {
-        ArgumentNullException.ThrowIfNull(update);
-
-        lock (_syncRoot)
-        {
-            var request = _requests.FirstOrDefault(item => item.Id == update.Id);
-            if (request is null)
-            {
-                return null;
-            }
-
-            request.UserId = string.IsNullOrWhiteSpace(update.UserId) ? request.UserId : update.UserId.Trim();
-            request.UserName = string.IsNullOrWhiteSpace(update.UserName) ? request.UserName : update.UserName.Trim();
-            request.MediaId = string.IsNullOrWhiteSpace(update.MediaId) ? request.MediaId : update.MediaId.Trim();
-            request.Title = string.IsNullOrWhiteSpace(update.Title) ? request.Title : update.Title.Trim();
-            request.MediaType = string.IsNullOrWhiteSpace(update.MediaType) ? request.MediaType : update.MediaType.Trim();
-            request.Overview = update.Overview?.Trim() ?? request.Overview;
-            request.PosterUrl = update.PosterUrl?.Trim() ?? request.PosterUrl;
-            request.ProviderId = string.IsNullOrWhiteSpace(update.ProviderId) ? request.ProviderId : update.ProviderId.Trim();
-            request.ProviderIds = update.ProviderIds?.Count > 0
-                ? new Dictionary<string, string>(update.ProviderIds, StringComparer.OrdinalIgnoreCase)
-                : request.ProviderIds;
-            request.SourceProvider = string.IsNullOrWhiteSpace(update.SourceProvider) ? request.SourceProvider : update.SourceProvider.Trim();
-            request.ProductionYear = update.ProductionYear ?? request.ProductionYear;
-            request.MediaCategory = update.MediaCategory == MediaCategory.All ? request.MediaCategory : update.MediaCategory;
-            request.RequestScope = update.RequestScope;
-            request.RequestKind = update.RequestKind;
-            request.RequestedSeasonNumbers = update.RequestedSeasonNumbers?.Distinct().OrderBy(value => value).ToList() ?? request.RequestedSeasonNumbers;
-            request.RequestedEpisodeIds = update.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? request.RequestedEpisodeIds;
-            request.RequestedEpisodeNames = update.RequestedEpisodeNames?.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? request.RequestedEpisodeNames;
-            request.Note = update.Note?.Trim() ?? request.Note;
-            request.MediaQuality = string.IsNullOrWhiteSpace(update.MediaQuality) ? request.MediaQuality : update.MediaQuality.Trim();
-            request.Status = update.Status;
-            if (request.StatusHistory.Count == 0
-                || request.StatusHistory[^1].Status != request.Status)
-            {
-                request.StatusHistory.Add(new RequestStatusChange
-                {
-                    Status = request.Status,
-                    ChangedAtUtc = DateTime.UtcNow
-                });
-            }
             Save();
             return Clone(request);
         }
@@ -132,28 +91,14 @@ public sealed class RequestService : IRequestService
                 return null;
             }
 
-            request.Status = status;
-            if (request.StatusHistory.Count == 0
-                || request.StatusHistory[^1].Status != status)
+            if (request.Status != status)
             {
-                request.StatusHistory.Add(new RequestStatusChange
-                {
-                    Status = status,
-                    ChangedAtUtc = DateTime.UtcNow
-                });
+                request.Status = status;
+                request.StatusHistory.Add(new RequestStatusChange { Status = status, ChangedAtUtc = DateTime.UtcNow });
+                Save();
             }
-            Save();
-            return Clone(request);
-        }
-    }
 
-    public bool IsDuplicate(MediaRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        lock (_syncRoot)
-        {
-            Normalize(request);
-            return IsDuplicateLocked(request);
+            return Clone(request);
         }
     }
 
@@ -171,33 +116,46 @@ public sealed class RequestService : IRequestService
         }
     }
 
+    /// <summary>
+    /// Returns the status of an existing request (by any user) for the given title, or null.
+    /// A request for the whole movie/series wins over season or episode requests.
+    /// </summary>
+    public RequestStatus? FindExistingStatus(MediaCategory category, string providerId, IReadOnlyDictionary<string, string> providerIds)
+    {
+        var probe = new MediaRequest { ProviderId = providerId ?? string.Empty, ProviderIds = new(providerIds, StringComparer.OrdinalIgnoreCase) };
+
+        lock (_syncRoot)
+        {
+            var matches = _requests
+                .Where(request => request.MediaCategory == category && HasMatchingProviderId(request, probe))
+                .ToList();
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+
+            var whole = matches.FirstOrDefault(request => request.RequestScope is RequestScope.EntireMovie or RequestScope.EntireSeries);
+            return (whole ?? matches[0]).Status;
+        }
+    }
+
     private List<MediaRequest> Load()
     {
-        if (!File.Exists(_filePath))
+        if (!File.Exists(StorageFilePath))
         {
             return new List<MediaRequest>();
         }
 
         try
         {
-            var json = File.ReadAllText(_filePath);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return new List<MediaRequest>();
-            }
-
-            var requests = JsonSerializer.Deserialize<List<MediaRequest>>(json, _jsonOptions) ?? new List<MediaRequest>();
-            foreach (var request in requests)
-            {
-                Normalize(request);
-            }
+            var json = File.ReadAllText(StorageFilePath);
+            var requests = string.IsNullOrWhiteSpace(json)
+                ? new List<MediaRequest>()
+                : JsonSerializer.Deserialize<List<MediaRequest>>(json, _jsonOptions) ?? new List<MediaRequest>();
+            requests.ForEach(Normalize);
             return requests;
         }
-        catch (JsonException)
-        {
-            return new List<MediaRequest>();
-        }
-        catch (IOException)
+        catch (Exception exception) when (exception is JsonException or IOException)
         {
             return new List<MediaRequest>();
         }
@@ -205,82 +163,47 @@ public sealed class RequestService : IRequestService
 
     private void Save()
     {
-        var tempPath = _filePath + ".tmp";
-        var json = JsonSerializer.Serialize(_requests, _jsonOptions);
-        File.WriteAllText(tempPath, json);
-        File.Move(tempPath, _filePath, true);
+        var tempPath = StorageFilePath + ".tmp";
+        File.WriteAllText(tempPath, JsonSerializer.Serialize(_requests, _jsonOptions));
+        File.Move(tempPath, StorageFilePath, true);
         LastSaveTimestampUtc = DateTime.UtcNow;
     }
 
     private static MediaRequest Clone(MediaRequest request)
     {
-        return new MediaRequest
-        {
-            Id = request.Id,
-            UserId = request.UserId,
-            UserName = request.UserName,
-            MediaId = request.MediaId,
-            Title = request.Title,
-            MediaType = request.MediaType,
-            Overview = request.Overview,
-            PosterUrl = request.PosterUrl,
-            ProviderId = request.ProviderId,
-            ProviderIds = request.ProviderIds is null
-                ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-                : new Dictionary<string, string>(request.ProviderIds, StringComparer.OrdinalIgnoreCase),
-            SourceProvider = request.SourceProvider,
-            ProductionYear = request.ProductionYear,
-            RequestedAtUtc = request.RequestedAtUtc,
-            RequestDate = request.RequestedAtUtc,
-            Status = request.Status,
-            MediaCategory = request.MediaCategory,
-            RequestScope = request.RequestScope,
-            RequestKind = request.RequestKind,
-            RequestedSeasonNumbers = request.RequestedSeasonNumbers?.ToList() ?? new List<int>(),
-            RequestedEpisodeIds = request.RequestedEpisodeIds?.ToList() ?? new List<string>(),
-            RequestedEpisodeNames = request.RequestedEpisodeNames?.ToList() ?? new List<string>(),
-            Note = request.Note ?? string.Empty,
-            MediaQuality = request.MediaQuality?.Trim() ?? string.Empty,
-            StatusHistory = request.StatusHistory?.Select(change => new RequestStatusChange
-            {
-                Status = change.Status,
-                ChangedAtUtc = change.ChangedAtUtc
-            }).ToList() ?? new List<RequestStatusChange>()
-        };
+        var copy = request.ShallowCopy();
+        copy.ProviderIds = new Dictionary<string, string>(request.ProviderIds, StringComparer.OrdinalIgnoreCase);
+        copy.RequestedSeasonNumbers = request.RequestedSeasonNumbers.ToList();
+        copy.RequestedEpisodeIds = request.RequestedEpisodeIds.ToList();
+        copy.RequestedEpisodeNames = request.RequestedEpisodeNames.ToList();
+        copy.StatusHistory = request.StatusHistory
+            .Select(change => new RequestStatusChange { Status = change.Status, ChangedAtUtc = change.ChangedAtUtc })
+            .ToList();
+        return copy;
     }
 
-    private bool IsDuplicateLocked(MediaRequest candidate)
+    private bool IsDuplicate(MediaRequest candidate)
     {
         foreach (var request in _requests)
         {
-            if (!HasMatchingProviderId(request, candidate))
+            if (request.MediaCategory != candidate.MediaCategory || !HasMatchingProviderId(request, candidate))
             {
                 continue;
             }
 
-            if (candidate.RequestScope == RequestScope.EntireMovie
-                || candidate.RequestScope == RequestScope.EntireSeries)
+            var duplicate = candidate.RequestScope switch
             {
-                if (request.RequestScope == candidate.RequestScope)
-                {
-                    return true;
-                }
-            }
-            else if (candidate.RequestScope == RequestScope.SeasonSelection)
+                RequestScope.EntireMovie or RequestScope.EntireSeries => request.RequestScope == candidate.RequestScope,
+                RequestScope.SeasonSelection => request.RequestScope == RequestScope.SeasonSelection
+                    && request.RequestedSeasonNumbers.Intersect(candidate.RequestedSeasonNumbers).Any(),
+                RequestScope.EpisodeSelection => request.RequestScope == RequestScope.EpisodeSelection
+                    && request.RequestedEpisodeIds.Intersect(candidate.RequestedEpisodeIds, StringComparer.OrdinalIgnoreCase).Any(),
+                _ => false
+            };
+
+            if (duplicate)
             {
-                if (request.RequestScope == RequestScope.SeasonSelection
-                    && request.RequestedSeasonNumbers.Intersect(candidate.RequestedSeasonNumbers).Any())
-                {
-                    return true;
-                }
-            }
-            else if (candidate.RequestScope == RequestScope.EpisodeSelection)
-            {
-                if (request.RequestScope == RequestScope.EpisodeSelection
-                    && request.RequestedEpisodeIds.Intersect(candidate.RequestedEpisodeIds, StringComparer.OrdinalIgnoreCase).Any())
-                {
-                    return true;
-                }
+                return true;
             }
         }
 
@@ -295,16 +218,9 @@ public sealed class RequestService : IRequestService
             return true;
         }
 
-        if (left.ProviderIds is null || right.ProviderIds is null)
-        {
-            return false;
-        }
-
-        return left.ProviderIds.Any(leftId =>
-            !string.IsNullOrWhiteSpace(leftId.Value)
-            && right.ProviderIds.Any(rightId =>
-                string.Equals(leftId.Key, rightId.Key, StringComparison.OrdinalIgnoreCase)
-                && string.Equals(leftId.Value, rightId.Value, StringComparison.OrdinalIgnoreCase)));
+        return left.ProviderIds.Any(pair =>
+            right.ProviderIds.TryGetValue(pair.Key, out var value)
+            && string.Equals(pair.Value, value, StringComparison.OrdinalIgnoreCase));
     }
 
     private static void Normalize(MediaRequest request)
@@ -313,51 +229,37 @@ public sealed class RequestService : IRequestService
         request.UserName = request.UserName?.Trim() ?? string.Empty;
         request.MediaId = request.MediaId?.Trim() ?? string.Empty;
         request.ProviderId = request.ProviderId?.Trim() ?? string.Empty;
-        request.ProviderIds = request.ProviderIds?
+        request.ProviderIds = (request.ProviderIds ?? new Dictionary<string, string>())
             .Where(pair => !string.IsNullOrWhiteSpace(pair.Key) && !string.IsNullOrWhiteSpace(pair.Value))
-            .ToDictionary(
-                pair => pair.Key.Trim(),
-                pair => pair.Value.Trim(),
-                StringComparer.OrdinalIgnoreCase)
-            ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(pair => pair.Key.Trim(), pair => pair.Value.Trim(), StringComparer.OrdinalIgnoreCase);
+        request.RequestedSeasonNumbers = (request.RequestedSeasonNumbers ?? new List<int>())
+            .Where(value => value >= 0).Distinct().Order().ToList();
+        request.RequestedEpisodeIds = (request.RequestedEpisodeIds ?? new List<string>())
+            .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        request.RequestedEpisodeNames = (request.RequestedEpisodeNames ?? new List<string>())
+            .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        request.Note = request.Note?.Trim() ?? string.Empty;
+        request.MediaQuality = request.MediaQuality?.Trim() ?? string.Empty;
         request.StatusHistory ??= new List<RequestStatusChange>();
         if (request.StatusHistory.Count == 0 && request.RequestedAtUtc != default)
         {
-            request.StatusHistory.Add(new RequestStatusChange
-            {
-                Status = request.Status,
-                ChangedAtUtc = request.RequestedAtUtc
-            });
-        }
-
-        if (request.RequestedAtUtc == default && request.RequestDate != default)
-        {
-            request.RequestedAtUtc = request.RequestDate;
-        }
-        else if (request.RequestDate == default && request.RequestedAtUtc != default)
-        {
-            request.RequestDate = request.RequestedAtUtc;
+            request.StatusHistory.Add(new RequestStatusChange { Status = request.Status, ChangedAtUtc = request.RequestedAtUtc });
         }
 
         if (request.MediaCategory == MediaCategory.All)
         {
-            request.MediaCategory = string.Equals(request.MediaType, "TV Show", StringComparison.OrdinalIgnoreCase)
+            request.MediaCategory = request.MediaType.StartsWith("TV", StringComparison.OrdinalIgnoreCase)
                 ? MediaCategory.TVShows
                 : MediaCategory.Movies;
         }
 
-        request.RequestedSeasonNumbers = request.RequestedSeasonNumbers?
-            .Where(value => value >= 0)
-            .Distinct()
-            .OrderBy(value => value)
-            .ToList() ?? new List<int>();
-        request.RequestedEpisodeIds = request.RequestedEpisodeIds?.Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
-        request.RequestedEpisodeNames = request.RequestedEpisodeNames?.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList() ?? new List<string>();
-        request.Note = request.Note?.Trim() ?? string.Empty;
-        request.MediaQuality = request.MediaQuality?.Trim() ?? string.Empty;
-
         if (request.MediaCategory == MediaCategory.TVShows)
         {
+            if (request.RequestScope == RequestScope.EntireMovie)
+            {
+                request.RequestScope = RequestScope.EntireSeries;
+            }
+
             request.RequestKind = request.RequestScope switch
             {
                 RequestScope.SeasonSelection => RequestKind.Season,
@@ -367,8 +269,16 @@ public sealed class RequestService : IRequestService
         }
         else
         {
-            request.RequestKind = RequestKind.Movie;
             request.RequestScope = RequestScope.EntireMovie;
+            request.RequestKind = RequestKind.Movie;
         }
+    }
+}
+
+public sealed class DuplicateRequestException : InvalidOperationException
+{
+    public DuplicateRequestException(string message)
+        : base(message)
+    {
     }
 }

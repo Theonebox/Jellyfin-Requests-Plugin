@@ -96,7 +96,12 @@ function statusLabel(status) {
     return String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1 $2");
 }
 
-export default function (view) {
+export default function (view, params) {
+    // "RequestsManage" is the dashboard sidebar entry for this same page (see Plugin.GetPages).
+    const pageName = (params && params.name)
+        || new URLSearchParams(window.location.hash.split("?")[1] || window.location.search).get("name");
+    let initialTab = pageName === "RequestsManage" ? "requests" : null;
+
     const $ = (selector) => view.querySelector(selector);
 
     const state = {
@@ -479,8 +484,12 @@ export default function (view) {
                 await loadGeneral();
             }
 
-            const activeTab = view.querySelector(".requests-config-tab-active");
-            if (activeTab && activeTab.dataset.tab === "requests") {
+            if (initialTab) {
+                // Opened from the dashboard sidebar entry: start on the Requests tab.
+                const tab = initialTab;
+                initialTab = null;
+                selectTab(tab);
+            } else if (view.querySelector(".requests-config-tab-active")?.dataset.tab === "requests") {
                 await loadRequests();
             }
         } catch (error) {

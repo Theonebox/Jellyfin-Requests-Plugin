@@ -246,34 +246,68 @@
     font-size: .85em;
 }
 
-/* ---------- my requests (Jellyfin list markup) ---------- */
+/* ---------- my requests ---------- */
 
-:where(.requestsMine-list .listItem) {
-    display: flex;
-    align-items: center;
+.requestsMine-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 24em), 1fr));
     gap: 1em;
-    padding: .5em;
-    border-bottom: .07em solid rgba(128, 128, 128, .2);
 }
 
-:where(.requestsMine-list .listItemImage) {
+.requestsMine-item {
+    display: flex;
+    gap: 1em;
+    min-width: 0;
+    padding: .75em;
+    border-radius: .3em;
+}
+
+/* Fallback card background if the theme doesn't style .visualCardBox. */
+:where(.requestsMine-item) {
+    background-color: rgba(128, 128, 128, .12);
+}
+
+.requestsMine-poster {
+    display: flex;
     flex: 0 0 auto;
-    width: 3.5em;
-    height: 5.25em;
+    align-items: center;
+    justify-content: center;
+    width: 4.5em;
+    height: 6.75em;
     border-radius: .2em;
-    background-color: rgba(128, 128, 128, .2);
     background-position: center;
     background-size: cover;
+    background-repeat: no-repeat;
 }
 
-:where(.requestsMine-list .listItemBody) {
+:where(.requestsMine-poster) {
+    background-color: rgba(128, 128, 128, .2);
+}
+
+.requestsMine-body {
+    display: flex;
     flex: 1 1 auto;
+    flex-direction: column;
+    gap: .2em;
     min-width: 0;
 }
 
-:where(.requestsMine-list .listItemBodyText) {
+.requestsMine-title {
     overflow: hidden;
+    font-weight: 600;
     text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.requestsMine-footer {
+    display: flex;
+    align-items: center;
+    gap: .5em;
+    margin-top: auto;
+}
+
+.requestsMine-cancel {
+    margin-left: auto;
 }
 
 .requestsStatusBadge {
@@ -360,6 +394,20 @@
 
 :where(.requestsDialog .formDialogFooter .emby-button) {
     width: 100%;
+}
+
+.requestsDialog .formDialogFooter {
+    flex-wrap: wrap;
+}
+
+.requestsDialog .requestsDialog-message {
+    flex: 1 1 100%;
+    margin: 0 0 .5em;
+    text-align: center;
+}
+
+.requestsDialog .requestsDialog-message:empty {
+    display: none;
 }
 
 .requestsDialog-summary {

@@ -251,52 +251,62 @@
         const fragment = document.createDocumentFragment();
         state.myRequests.forEach(function (request) {
             const status = field(request, "status") || "Pending";
-            const row = document.createElement("div");
-            row.className = "listItem listItem-border requestsMine-item";
+            const title = field(request, "title") || "Untitled";
+            const year = field(request, "productionYear");
 
-            const image = document.createElement("div");
-            image.className = "listItemImage listItemImage-large";
-            const poster = field(request, "posterUrl");
-            if (poster) {
-                image.style.backgroundImage = cssUrl(poster);
+            // visualCardBox gives the theme's card background, like Jellyfin's own cards.
+            const item = document.createElement("div");
+            item.className = "visualCardBox requestsMine-item";
+
+            const poster = document.createElement("div");
+            poster.className = "requestsMine-poster defaultCardBackground";
+            const posterUrl = field(request, "posterUrl");
+            if (posterUrl) {
+                poster.style.backgroundImage = cssUrl(posterUrl);
+            } else {
+                poster.append(icon(isTv(request) ? "tv" : "movie"));
             }
 
             const body = document.createElement("div");
-            body.className = "listItemBody two-line";
-            const title = document.createElement("div");
-            title.className = "listItemBodyText";
-            const year = field(request, "productionYear");
-            title.textContent = (field(request, "title") || "Untitled") + (year ? ` (${year})` : "");
-            const details = document.createElement("div");
-            details.className = "listItemBodyText secondary";
-            details.textContent = [
-                field(request, "mediaType"),
-                scopeLabel(request),
-                field(request, "mediaQuality"),
-                formatDate(field(request, "requestedAtUtc")) && "Requested " + formatDate(field(request, "requestedAtUtc"))
-            ].filter(Boolean).join(" · ");
-            body.append(title, details);
+            body.className = "requestsMine-body";
 
+            const heading = document.createElement("div");
+            heading.className = "requestsMine-title";
+            heading.textContent = title + (year ? ` (${year})` : "");
+
+            const details = document.createElement("div");
+            details.className = "secondaryText";
+            details.textContent = [field(request, "mediaType"), scopeLabel(request), field(request, "mediaQuality")]
+                .filter(Boolean).join(" · ");
+
+            const date = document.createElement("div");
+            date.className = "secondaryText";
+            const requested = formatDate(field(request, "requestedAtUtc"));
+            date.textContent = requested ? `Requested ${requested}` : "";
+
+            const footer = document.createElement("div");
+            footer.className = "requestsMine-footer";
             const badge = document.createElement("span");
             badge.className = `requestsStatusBadge ${statusClass(status)}`;
             badge.textContent = statusLabel(status);
-
-            row.append(image, body, badge);
+            footer.append(badge);
 
             if (status === "Pending") {
                 const cancel = document.createElement("button");
                 cancel.type = "button";
-                cancel.className = "listItemButton paper-icon-button-light";
+                cancel.className = "paper-icon-button-light requestsMine-cancel";
                 cancel.title = "Cancel request";
-                cancel.setAttribute("aria-label", `Cancel request for ${field(request, "title") || "this item"}`);
+                cancel.setAttribute("aria-label", `Cancel request for ${title}`);
                 cancel.append(icon("delete"));
                 cancel.addEventListener("click", function () {
                     cancelRequest(request, cancel);
                 });
-                row.append(cancel);
+                footer.append(cancel);
             }
 
-            fragment.append(row);
+            body.append(heading, details, date, footer);
+            item.append(poster, body);
+            fragment.append(item);
         });
         el.myList.append(fragment);
     }
@@ -344,13 +354,18 @@
         if (field(item, "inLibrary")) {
             return { inLibrary: true, text: "In library", icon: "check", indicatorClass: "playedIndicator", statusClass: "" };
         }
-        const status = state.requested.get(mediaKey(item));
+        // Your own request shows its status; someone else's shows "Already requested"
+        // (the server reports that as requestStatus on each search result).
+        const mine = state.requested.get(mediaKey(item));
+        const status = mine || field(item, "requestStatus");
         if (status) {
             // Same indicator markup Jellyfin uses for its own card badges (countIndicator gets the
             // theme's accent background, like the played check), with a clear icon per status.
             return {
                 inLibrary: false,
-                text: statusLabel(status),
+                mine: Boolean(mine),
+                status: status,
+                text: mine ? statusLabel(status) : "Already requested",
                 icon: STATUS_ICONS[status] || "schedule",
                 indicatorClass: "countIndicator requestsIndicator",
                 statusClass: statusClass(status)
@@ -542,12 +557,15 @@
         // TV shows: still allow requests for missing seasons/episodes.
         let blocked = "";
         let note = "";
+        const who = current && current.mine ? "You already requested" : "Someone already requested";
         if (current && !tv) {
-            blocked = current.inLibrary ? "This movie is already in the library." : `You already requested this movie (${current.text}).`;
+            blocked = current.inLibrary
+                ? "This movie is already in the library."
+                : `${who} this movie (${statusLabel(current.status)}).`;
         } else if (current && tv) {
             note = current.inLibrary
                 ? "This show is already in the library. You can still request missing seasons or episodes."
-                : `You already have a request for this show (${current.text}). You can still request other seasons or episodes.`;
+                : `${who} this show (${statusLabel(current.status)}). You can still request other seasons or episodes.`;
         }
         setMessage(el.dialogMessage, blocked || note);
         el.submit.disabled = Boolean(blocked);
@@ -635,9 +653,7 @@
             setMessage(el.status, `Requested ${payload.title}.`);
             await loadMyRequests();
         } catch (error) {
-            setMessage(el.dialogMessage, error.status === 409
-                ? "You (or someone else) already requested this."
-                : error.message || "Unable to submit the request.", true);
+            setMessage(el.dialogMessage, error.message || "Unable to submit the request.", true);
             el.submit.disabled = false;
         } finally {
             state.submitting = false;

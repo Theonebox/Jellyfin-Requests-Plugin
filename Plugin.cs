@@ -47,6 +47,8 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         base.OnUninstalling();
     }
 
+    public const string ManageRequestsPageName = "RequestsManage";
+
     public override string Name => "Requests";
 
     public override Guid Id =>
@@ -61,6 +63,17 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
                 Name = "RequestsConfiguration",
                 DisplayName = "Requests",
                 EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html"
+            },
+            new PluginPageInfo
+            {
+                // Same page, listed in the dashboard sidebar; the controller opens it on the
+                // Requests tab when loaded under this name.
+                Name = ManageRequestsPageName,
+                DisplayName = "Requests",
+                EmbeddedResourcePath = $"{GetType().Namespace}.Configuration.configPage.html",
+                EnableInMainMenu = true,
+                MenuSection = "server",
+                MenuIcon = "how_to_vote"
             },
             new PluginPageInfo
             {

@@ -33,7 +33,7 @@
                 <h2 class="sectionTitle">My Requests</h2>
             </div>
             <div id="requestsMyStatus" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
-            <div id="requestsMyList" class="paperList requestsMine-list"></div>
+            <div id="requestsMyList" class="requestsMine-list"></div>
         </div>
     </div>
 
@@ -81,12 +81,12 @@
                         <label class="inputLabel" for="requestsNote">Note (optional)</label>
                         <textarea id="requestsNote" class="emby-textarea" rows="3" maxlength="1000"></textarea>
                     </div>
-
-                    <div id="requestsDialogMessage" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
                 </div>
             </div>
 
             <div class="formDialogFooter">
+                <!-- In the footer so errors are always visible, however far the form scrolls. -->
+                <div id="requestsDialogMessage" class="fieldDescription requestsMessage requestsDialog-message" role="status" aria-live="polite"></div>
                 <button id="requestsDialogSubmit" type="button" class="raised button-submit block btnSubmit formDialogFooterItem emby-button">
                     <span>Submit Request</span>
                 </button>

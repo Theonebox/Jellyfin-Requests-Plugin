@@ -44,13 +44,9 @@ public sealed class MediaRequest
 
     public DateTime RequestedAtUtc { get; set; }
 
-    public DateTime RequestDate
-    {
-        get => RequestedAtUtc;
-        set => RequestedAtUtc = value;
-    }
-
     public RequestStatus Status { get; set; } = RequestStatus.Pending;
 
     public List<RequestStatusChange> StatusHistory { get; set; } = new();
+
+    public MediaRequest ShallowCopy() => (MediaRequest)MemberwiseClone();
 }

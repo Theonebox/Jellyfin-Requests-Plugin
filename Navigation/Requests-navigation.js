@@ -66,8 +66,10 @@
             + ` overscroll-behavior: contain; z-index: 998; -webkit-overflow-scrolling: touch; }`
             + `:where(#${VIEW_ID}) { background-color: var(--requests-page-background-color, #101010);`
             + ` background-image: var(--requests-page-background-image, none); background-size: cover; background-attachment: fixed; }`
-            + `#${BUTTON_ID}.requestsHeaderButton-active { opacity: 1; }`
-            + `#${BUTTON_ID}.MuiIconButton-root.requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2); }`;
+            + `.requestsHeaderButton-standalone { display: inline-flex; align-items: center; justify-content: center;`
+            + ` padding: 12px; margin: 0; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }`
+            + `.requestsHeaderButton-standalone:hover { background-color: rgba(128, 128, 128, .15); }`
+            + `#${BUTTON_ID}:is(.MuiIconButton-root, .requestsHeaderButton-standalone).requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2); }`;
         document.head.append(style);
     }
 
@@ -91,35 +93,34 @@
     // Jellyfin has two header implementations and both can exist in the DOM at once (the unused
     // one is hidden): the classic .skinHeader and the React/MUI .MuiAppBar-root (the
     // "experimental" layout, also used by Jellyfin Enhanced). Only the visible one counts.
-    // Returns { layout, parent, before, template } describing where the button goes.
+    // Returns { kind, parent, before, template } describing where and how the button goes.
     function findInsertionPoint() {
         const appBar = document.querySelector(".MuiAppBar-root");
         if (isVisible(appBar)) {
+            // Copy only the SyncPlay button's look: other toolbar buttons (from plugins) can have
+            // unrelated styling. Until SyncPlay renders, the button styles itself and is rebuilt
+            // once SyncPlay appears.
             const sync = appBar.querySelector('button[aria-label="SyncPlay"], button[title="SyncPlay"]');
             if (sync && sync.parentElement) {
-                return { layout: "mui", parent: sync.parentElement, before: sync, template: sync };
+                return { kind: "mui-sync", parent: sync.parentElement, before: sync, template: sync };
             }
-            const iconButtons = Array.from(appBar.querySelectorAll(".MuiIconButton-root"))
-                .filter((button) => button.id !== BUTTON_ID && button.getAttribute("aria-controls") !== "app-user-menu" && isVisible(button));
-            if (iconButtons.length) {
-                return { layout: "mui", parent: iconButtons[0].parentElement, before: iconButtons[0], template: iconButtons[0] };
+            const firstIcon = Array.from(appBar.querySelectorAll(".MuiIconButton-root"))
+                .find((button) => button.id !== BUTTON_ID && button.getAttribute("aria-controls") !== "app-user-menu" && isVisible(button));
+            if (firstIcon) {
+                return { kind: "mui", parent: firstIcon.parentElement, before: firstIcon, template: null };
             }
             const toolbar = appBar.querySelector(".MuiToolbar-root");
-            return toolbar ? { layout: "mui", parent: toolbar, before: null, template: null } : null;
+            return toolbar ? { kind: "mui", parent: toolbar, before: null, template: null } : null;
         }
 
-        const skinHeader = document.querySelector(".skinHeader");
-        if (isVisible(skinHeader)) {
-            const headerRight = skinHeader.querySelector(".headerRight");
-            if (!headerRight) {
-                return null;
-            }
+        const headerRight = document.querySelector(".skinHeader .headerRight");
+        if (isVisible(headerRight)) {
             // SyncPlay may be hidden (class "hide") when the user lacks SyncPlay access;
             // the button still goes in that slot.
             const before = headerRight.querySelector(".headerSyncButton")
                 || headerRight.querySelector(".headerCastButton")
                 || headerRight.firstChild;
-            return { layout: "classic", parent: headerRight, before: before, template: null };
+            return { kind: "classic", parent: headerRight, before: before, template: null };
         }
 
         return null;
@@ -130,23 +131,24 @@
         button.id = BUTTON_ID;
         button.type = "button";
         button.title = "Requests";
-        button.dataset.layout = point.layout;
+        button.dataset.kind = point.kind;
         button.setAttribute("aria-label", "Requests");
 
-        if (point.layout === "mui") {
-            // Copy the neighbouring React icon button's classes so it looks identical (size,
-            // hover ripple area, colour) under any theme.
-            const svgClass = point.template && point.template.querySelector("svg")
-                ? point.template.querySelector("svg").getAttribute("class")
-                : "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium";
-            button.className = (point.template ? point.template.className.replace(/\bMui-focusVisible\b/g, "") : "MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInherit MuiIconButton-sizeLarge")
-                + " requestsHeaderButton";
-            button.innerHTML = `<svg class="${svgClass}" focusable="false" aria-hidden="true" viewBox="0 0 24 24"><path d="${HOW_TO_VOTE_PATH}"></path></svg>`;
-        } else {
+        if (point.kind === "classic") {
             button.setAttribute("is", "paper-icon-button-light");
             button.className = "headerButton headerButtonRight paper-icon-button-light requestsHeaderButton";
             // Same markup Jellyfin uses for its own classic header icons.
             button.innerHTML = '<span class="material-icons how_to_vote" aria-hidden="true"></span>';
+        } else {
+            const svgTemplate = point.template && point.template.querySelector("svg");
+            button.className = point.template
+                ? point.template.className.replace(/\bMui-focusVisible\b/g, "") + " requestsHeaderButton"
+                : "requestsHeaderButton requestsHeaderButton-standalone";
+            // The icon always gets an explicit size so it can't collapse to zero width when the
+            // copied classes don't size it.
+            button.innerHTML = `<svg class="${svgTemplate ? svgTemplate.getAttribute("class") : ""}" focusable="false" aria-hidden="true" viewBox="0 0 24 24"`
+                + ' style="width:1em;height:1em;font-size:1.5rem;fill:currentColor;flex-shrink:0">'
+                + `<path d="${HOW_TO_VOTE_PATH}"></path></svg>`;
         }
 
         button.addEventListener("click", function (event) {
@@ -162,7 +164,7 @@
         let button = document.getElementById(BUTTON_ID);
 
         // No button when signed out, or on the administrator dashboard (its own layout with a
-        // side drawer; requests are managed from the plugin settings page there).
+        // side drawer; requests are managed from the dashboard's Requests entry there).
         if (!isAuthenticated() || isDashboardRoute()) {
             if (button) {
                 button.remove();
@@ -176,8 +178,8 @@
             return;
         }
 
-        if (button && button.dataset.layout !== point.layout) {
-            button.remove(); // Layout switched; rebuild with the right look.
+        if (button && button.dataset.kind !== point.kind) {
+            button.remove(); // Header changed (layout switch, SyncPlay appeared); rebuild.
             button = null;
         }
 

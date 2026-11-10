@@ -34,4 +34,8 @@ public sealed class MetadataSearchResult
     /// <summary>True when a movie/series with one of these provider IDs already exists in the library.</summary>
     [JsonPropertyName("inLibrary")]
     public bool InLibrary { get; set; }
+
+    /// <summary>Status of an existing request for this title by any user, if there is one.</summary>
+    [JsonPropertyName("requestStatus")]
+    public RequestStatus? RequestStatus { get; set; }
 }

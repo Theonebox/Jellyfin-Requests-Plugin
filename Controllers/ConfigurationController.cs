@@ -1,77 +1,58 @@
-using System.Security.Claims;
 using System.Text.Json.Serialization;
+using Jellyfin.Plugin.Requests.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Jellyfin.Plugin.Requests.Controllers;
 
+/// <summary>
+/// Plugin settings. Reading is open to every signed-in user (the Requests page needs the
+/// quality and media-type options); changing settings and diagnostics are administrator-only.
+/// </summary>
 [ApiController]
 [Authorize]
 [Route("Requests/Configuration")]
 public sealed class ConfigurationController : ControllerBase
 {
+    private static PluginConfiguration? Configuration => Plugin.Instance?.Configuration;
+
     [HttpGet("QualityOptions")]
     public ActionResult<object> GetQualityOptions()
-    {
-        var options = Plugin.Instance?.Configuration.MediaQualityOptions
-            .Where(option => !string.IsNullOrWhiteSpace(option))
-            .Select(option => option.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList()
-            ?? new List<string> { "720p", "1080p", "4K" };
-
-        return Ok(new { options });
-    }
+        => Ok(new { options = Clean(Configuration?.MediaQualityOptions) is { Length: > 0 } options ? options : PluginConfiguration.DefaultQualityOptions });
 
     [HttpPut("QualityOptions")]
     public IActionResult UpdateQualityOptions([FromBody] QualityOptionsModel model)
     {
-        if (!IsAdministrator())
+        if (!User.IsAdministrator())
         {
-            return StatusCode(403, new { error = "Administrator access is required." });
+            return Forbidden();
         }
 
-        if (model?.Options is null)
-        {
-            return BadRequest(new { error = "At least one media quality option is required." });
-        }
-
-        var options = model.Options
-            .Where(option => !string.IsNullOrWhiteSpace(option))
-            .Select(option => option.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (options.Count == 0)
+        var options = Clean(model?.Options);
+        if (options.Length == 0)
         {
             return BadRequest(new { error = "At least one media quality option is required." });
         }
 
-        if (Plugin.Instance is null)
-        {
-            return StatusCode(500, new { error = "Plugin configuration is unavailable." });
-        }
-
-        Plugin.Instance.Configuration.MediaQualityOptions = options;
-        Plugin.Instance.SaveConfiguration();
-        return Ok(new { options });
+        return Save(configuration => configuration.MediaQualityOptions = options, new { options });
     }
 
     [HttpGet("MediaOptions")]
     public ActionResult<object> GetMediaOptions()
     {
-        var configuration = Plugin.Instance?.Configuration;
+        var configuration = Configuration;
         return configuration is null
-            ? StatusCode(500, new { error = "Plugin configuration is unavailable." })
+            ? Unavailable()
             : Ok(new { movies = configuration.EnableMovies, tvShows = configuration.EnableTvShows });
     }
 
     [HttpPut("MediaOptions")]
     public IActionResult UpdateMediaOptions([FromBody] MediaOptionsModel model)
     {
-        if (!IsAdministrator())
+        if (!User.IsAdministrator())
         {
-            return StatusCode(403, new { error = "Administrator access is required." });
+            return Forbidden();
         }
 
         if (model is null || (!model.Movies && !model.TvShows))
@@ -79,63 +60,65 @@ public sealed class ConfigurationController : ControllerBase
             return BadRequest(new { error = "At least one media type must remain enabled." });
         }
 
-        if (Plugin.Instance is null)
-        {
-            return StatusCode(500, new { error = "Plugin configuration is unavailable." });
-        }
-
-        Plugin.Instance.Configuration.EnableMovies = model.Movies;
-        Plugin.Instance.Configuration.EnableTvShows = model.TvShows;
-        Plugin.Instance.SaveConfiguration();
-        return Ok(new { movies = model.Movies, tvShows = model.TvShows });
+        return Save(
+            configuration =>
+            {
+                configuration.EnableMovies = model.Movies;
+                configuration.EnableTvShows = model.TvShows;
+            },
+            new { movies = model.Movies, tvShows = model.TvShows });
     }
 
     [HttpGet("Diagnostics")]
     public ActionResult<object> GetDiagnostics()
     {
-        if (!IsAdministrator())
+        if (!User.IsAdministrator())
         {
-            return StatusCode(403, new { error = "Administrator access is required." });
+            return Forbidden();
         }
 
         var service = Plugin.Requests;
         if (service is null)
         {
-            return StatusCode(500, new { error = "Request service is unavailable." });
+            return Unavailable();
         }
 
         var requests = service.GetAll();
         return Ok(new
         {
             totalRequests = requests.Count,
-            pendingRequests = requests.Count(request => request.Status == Models.RequestStatus.Pending),
-            approvedRequests = requests.Count(request => request.Status == Models.RequestStatus.Approved),
-            availableRequests = requests.Count(request => request.Status == Models.RequestStatus.Available),
+            pendingRequests = requests.Count(request => request.Status == RequestStatus.Pending),
+            approvedRequests = requests.Count(request => request.Status == RequestStatus.Approved),
+            availableRequests = requests.Count(request => request.Status == RequestStatus.Available),
             pluginVersion = Plugin.Instance?.Version?.ToString() ?? "Unknown",
             storageFilePath = service.StorageFilePath,
             lastSaveTimestampUtc = service.LastSaveTimestampUtc
         });
     }
 
-    private bool IsAdministrator()
+    private static string[] Clean(IEnumerable<string>? options)
+        => (options ?? Array.Empty<string>())
+            .Where(option => !string.IsNullOrWhiteSpace(option))
+            .Select(option => option.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private IActionResult Save(Action<PluginConfiguration> apply, object result)
     {
-        if (User.IsInRole("Administrator"))
+        var plugin = Plugin.Instance;
+        if (plugin is null)
         {
-            return true;
+            return Unavailable();
         }
 
-        foreach (var claim in User.Claims)
-        {
-            if ((claim.Type == ClaimTypes.Role || claim.Type == "IsAdministrator" || claim.Type == "UserRole")
-                && (string.Equals(claim.Value, "Administrator", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(claim.Value, "True", StringComparison.OrdinalIgnoreCase)))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        apply(plugin.Configuration);
+        plugin.SaveConfiguration();
+        return Ok(result);
     }
+
+    private ObjectResult Forbidden() => StatusCode(StatusCodes.Status403Forbidden, new { error = "Administrator access is required." });
+
+    private ObjectResult Unavailable() => StatusCode(StatusCodes.Status500InternalServerError, new { error = "Plugin configuration is unavailable." });
 }
 
 public sealed class QualityOptionsModel
