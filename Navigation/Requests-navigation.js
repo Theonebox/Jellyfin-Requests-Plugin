@@ -3,6 +3,7 @@
 
     const buttonId = "requests-header-button";
     const viewId = "requests-public-view";
+    const configurationScriptUrl = "/Requests/Web/configPage.js?v=1.0.0.64-settings-fix";
 
     function isAuthenticated() {
         return typeof ApiClient !== "undefined"
@@ -62,13 +63,13 @@
         button.title = "Requests";
         button.setAttribute("aria-label", "Requests");
         button.innerHTML = '<span class="material-icons" aria-hidden="true">how_to_vote</span>';
-        button.addEventListener("click", function (event) {
+        button.onclick = function (event) {
             event.preventDefault();
             event.stopPropagation();
             showRequestsPage().catch(function (error) {
                 console.error("Requests page could not be loaded.", error);
             });
-        });
+        };
 
         if (dice?.parentElement === header) {
             dice.parentElement.insertBefore(button, dice.nextSibling);
@@ -96,16 +97,19 @@
             view.className = "page type-interior requests-public-view";
             view.append(documentFragment);
 
+            const container = document.querySelector(".mainAnimated") || document.body;
+            container.append(view);
+
             const script = document.createElement("script");
-            script.src = "/Requests/Web/requests.js?v=1.0.0.63";
+            script.src = "/Requests/Web/requests.js?v=1.0.0.64-click-fix";
             view.append(script);
-            (document.querySelector(".mainAnimated") || document.body).append(view);
         }
 
         document.querySelectorAll(".mainAnimated > .page").forEach(function (page) {
             page.hidden = page !== view;
         });
         view.hidden = false;
+        view.style.display = "";
     }
 
     function hideRequestsPage() {
@@ -130,15 +134,35 @@
         window.requestAnimationFrame(addButton);
     }
 
+    function loadConfigurationScript() {
+        if (window.RequestsConfigurationScriptLoaded
+            || !document.getElementById("requestsConfigPage")
+            || document.querySelector("script[data-requests-configuration-script]")) {
+            return;
+        }
+
+        const script = document.createElement("script");
+        script.src = configurationScriptUrl;
+        script.dataset.requestsConfigurationScript = "true";
+        script.onerror = function () {
+            console.error("Requests administrator settings script could not be loaded.");
+        };
+        document.head.append(script);
+    }
+
     function initialize() {
         addButton();
-        new MutationObserver(scheduleAdd).observe(document.body, { childList: true, subtree: true });
+        new MutationObserver(function () {
+            scheduleAdd();
+            loadConfigurationScript();
+        }).observe(document.body, { childList: true, subtree: true });
         window.addEventListener("hashchange", function () {
             scheduleAdd();
             syncRequestsPage();
         });
         window.addEventListener("pageshow", scheduleAdd);
         syncRequestsPage();
+        loadConfigurationScript();
     }
 
     if (document.readyState === "loading") {

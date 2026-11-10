@@ -1,4 +1,5 @@
 ﻿        (function () {
+    window.RequestsConfigurationScriptLoaded = true;
     let requests = [];
     let qualityOptions = [];
     let descending = true;
