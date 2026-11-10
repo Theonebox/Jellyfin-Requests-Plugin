@@ -2,7 +2,6 @@
     "use strict";
 
     const buttonId = "requests-header-button";
-    const route = "#/requests";
     const viewId = "requests-public-view";
 
     function isAuthenticated() {
@@ -63,8 +62,12 @@
         button.title = "Requests";
         button.setAttribute("aria-label", "Requests");
         button.innerHTML = '<span class="material-icons" aria-hidden="true">how_to_vote</span>';
-        button.addEventListener("click", function () {
-            window.location.hash = route;
+        button.addEventListener("click", function (event) {
+            event.preventDefault();
+            event.stopPropagation();
+            showRequestsPage().catch(function (error) {
+                console.error("Requests page could not be loaded.", error);
+            });
         });
 
         if (dice?.parentElement === header) {
@@ -94,7 +97,7 @@
             view.append(documentFragment);
 
             const script = document.createElement("script");
-            script.src = "/Requests/Web/requests.js?v=1.0.0.62";
+            script.src = "/Requests/Web/requests.js?v=1.0.0.63";
             view.append(script);
             (document.querySelector(".mainAnimated") || document.body).append(view);
         }
@@ -120,13 +123,7 @@
     }
 
     function syncRequestsPage() {
-        if (window.location.hash === route) {
-            showRequestsPage().catch(function (error) {
-                console.error("Requests page could not be loaded.", error);
-            });
-        } else {
-            hideRequestsPage();
-        }
+        hideRequestsPage();
     }
 
     function scheduleAdd() {

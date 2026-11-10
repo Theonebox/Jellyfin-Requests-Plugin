@@ -1,8 +1,8 @@
 ﻿        (function () {
-            const page = document.querySelector("#requestsConfigPage");
-            let requests = [];
-            let qualityOptions = [];
-            let descending = true;
+    let requests = [];
+    let qualityOptions = [];
+    let descending = true;
+    let initializedPage;
 
             function headers() {
                 const api = window.ApiClient;
@@ -69,7 +69,7 @@
                     .replace(/[^a-z-]/g, "");
             }
 
-            function renderQualityOptions() {
+            function renderQualityOptions(page) {
                 const target = page.querySelector("#requestsQualityOptions");
                 target.replaceChildren();
                 qualityOptions.forEach(function (option, index) {
@@ -91,28 +91,46 @@
                             return;
                         }
                         qualityOptions[index] = value;
-                        await saveQualityOptions();
+                        await saveQualityOptions(page);
                     };
                     deleteButton.onclick = async function () {
                         qualityOptions.splice(index, 1);
-                        await saveQualityOptions();
+                        await saveQualityOptions(page);
                     };
                     row.append(input, deleteButton);
                     target.append(row);
                 });
             }
 
-            async function loadGeneral() {
-                const [options, diagnostics, mediaOptions] = await Promise.all([
+            async function loadGeneral(page) {
+                const results = await Promise.allSettled([
                     get("/Requests/Configuration/QualityOptions"),
                     get("/Requests/Configuration/Diagnostics"),
                     get("/Requests/Configuration/MediaOptions")
                 ]);
-                qualityOptions = options.options || [];
-                renderQualityOptions();
-                page.querySelector("#requestsGeneralVersion").textContent = diagnostics.pluginVersion || "Unknown";
-                page.querySelector("#requestsEnableMovies").checked = Boolean(mediaOptions.movies);
-                page.querySelector("#requestsEnableTvShows").checked = Boolean(mediaOptions.tvShows);
+
+                const optionsResult = results[0];
+                if (optionsResult.status === "fulfilled") {
+                    qualityOptions = optionsResult.value.options || [];
+                    renderQualityOptions(page);
+                } else {
+                    page.querySelector("#requestsQualityOptions").textContent = optionsResult.reason?.message || "Unable to load media quality options.";
+                }
+
+                const diagnosticsResult = results[1];
+                page.querySelector("#requestsGeneralVersion").textContent = diagnosticsResult.status === "fulfilled"
+                    ? diagnosticsResult.value.pluginVersion || "Unknown"
+                    : diagnosticsResult.reason?.message || "Unavailable";
+
+                const mediaOptionsResult = results[2];
+                if (mediaOptionsResult.status === "fulfilled") {
+                    page.querySelector("#requestsEnableMovies").checked = Boolean(mediaOptionsResult.value.movies);
+                    page.querySelector("#requestsEnableTvShows").checked = Boolean(mediaOptionsResult.value.tvShows);
+                } else {
+                    page.querySelector("#requestsEnableMovies").disabled = true;
+                    page.querySelector("#requestsEnableTvShows").disabled = true;
+                }
+
                 try {
                     const providers = await get("/Requests/Search/Providers");
                     page.querySelector("#requestsGeneralProviderStatus").textContent = providers.status || "Unknown";
@@ -121,12 +139,12 @@
                 }
             }
 
-            async function saveQualityOptions() {
+            async function saveQualityOptions(page) {
                 await send("/Requests/Configuration/QualityOptions", "PUT", { options: qualityOptions });
-                renderQualityOptions();
+                renderQualityOptions(page);
             }
 
-            async function saveMediaOptions() {
+            async function saveMediaOptions(page) {
                 const movies = page.querySelector("#requestsEnableMovies").checked;
                 const tvShows = page.querySelector("#requestsEnableTvShows").checked;
                 if (!movies && !tvShows) {
@@ -136,7 +154,7 @@
                 await send("/Requests/Configuration/MediaOptions", "PUT", { movies: movies, tvShows: tvShows });
             }
 
-            function renderDetails(request) {
+            function renderDetails(page, request) {
                 const list = page.querySelector("#requestsDetailsList");
                 const providerIds = value(request, "providerIds") || {};
                 const history = (value(request, "statusHistory") || []).map(function (change) {
@@ -162,7 +180,7 @@
                 page.querySelector("#requestsAdminDetails").hidden = false;
             }
 
-            function renderRequests() {
+            function renderRequests(page) {
                 const query = page.querySelector("#requestsAdminSearch").value.trim().toLowerCase();
                 const statusFilter = page.querySelector("#requestsAdminStatus").value;
                 const mediaFilter = page.querySelector("#requestsAdminMediaType").value;
@@ -200,7 +218,7 @@
                             return `<option value="${option}"${option === status ? " selected" : ""}>${option}</option>`;
                         }).join("")}</select></td>`
                         + `<td><button type="button" class="raised emby-button" data-delete aria-label="Delete request" title="Delete request">X</button></td>`;
-                    row.querySelector("[data-details]").onclick = function () { renderDetails(request); };
+                    row.querySelector("[data-details]").onclick = function () { renderDetails(page, request); };
                     row.querySelector("[data-status]").onchange = async function (event) {
                         const select = event.target;
                         const previousStatus = status;
@@ -232,31 +250,61 @@
                 });
             }
 
-            async function loadRequests() {
+            async function loadRequests(page) {
                 requests = await get("/Requests");
-                renderRequests();
+                renderRequests(page);
             }
 
-            page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
-                tab.onclick = function () {
-                    page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
-                    if (tab.dataset.tab === "requests") loadRequests().catch(function (error) { window.alert(error.message); });
-                };
-            });
-            page.querySelectorAll("#requestsAdminSearch,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) { control.oninput = renderRequests; control.onchange = renderRequests; });
-            page.querySelector("#requestsAdminSortDirection").onclick = function () { descending = !descending; this.textContent = descending ? "Descending" : "Ascending"; renderRequests(); };
-            page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
-            page.querySelector("#requestsQualityAdd").onclick = async function () {
-                qualityOptions.push("new");
-                await saveQualityOptions();
-            };
-            page.querySelector("#requestsEnableMovies").onchange = function () { saveMediaOptions().catch(function (error) { window.alert(error.message); }); };
-            page.querySelector("#requestsEnableTvShows").onchange = function () { saveMediaOptions().catch(function (error) { window.alert(error.message); }); };
-            ensureAdministrator().then(function (isAdministrator) {
-                if (!isAdministrator) {
-                    page.innerHTML = '<div class="content-primary"><h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p></div>';
+            function initialize(page) {
+                if (initializedPage === page) {
                     return;
+                };
+
+                initializedPage = page;
+                page.querySelectorAll(".requests-config-tab").forEach(function (tab) {
+                    tab.onclick = function () {
+                        page.querySelectorAll("[data-panel]").forEach(function (panel) { panel.hidden = panel.dataset.panel !== tab.dataset.tab; });
+                        if (tab.dataset.tab === "requests") {
+                            loadRequests(page).catch(function (error) { window.alert(error.message); });
+                        }
+                    };
+                });
+                page.querySelectorAll("#requestsAdminSearch,#requestsAdminStatus,#requestsAdminMediaType,#requestsAdminSort").forEach(function (control) {
+                    control.oninput = function () { renderRequests(page); };
+                    control.onchange = function () { renderRequests(page); };
+                });
+                page.querySelector("#requestsAdminSortDirection").onclick = function () {
+                    descending = !descending;
+                    this.textContent = descending ? "Descending" : "Ascending";
+                    renderRequests(page);
+                };
+                page.querySelector("#requestsDetailsClose").onclick = function () { page.querySelector("#requestsAdminDetails").hidden = true; };
+                page.querySelector("#requestsQualityAdd").onclick = async function () {
+                    qualityOptions.push("new");
+                    await saveQualityOptions(page);
+                };
+                page.querySelector("#requestsEnableMovies").onchange = function () { saveMediaOptions(page).catch(function (error) { window.alert(error.message); }); };
+                page.querySelector("#requestsEnableTvShows").onchange = function () { saveMediaOptions(page).catch(function (error) { window.alert(error.message); }); };
+                ensureAdministrator().then(function (isAdministrator) {
+                    if (!isAdministrator) {
+                        page.innerHTML = '<div class="content-primary"><h2 class="sectionTitle">Access denied</h2><p>Administrator access is required.</p></div>';
+                        return;
+                    }
+                    return loadGeneral(page);
+                }).catch(function (error) {
+                    page.querySelector("#requestsGeneralVersion").textContent = "Unavailable";
+                    page.querySelector("#requestsGeneralProviderStatus").textContent = error.message || "Unavailable";
+                    window.alert(error.message);
+                });
+            }
+
+            function findPage() {
+                const page = document.querySelector("#requestsConfigPage");
+                if (page) {
+                    initialize(page);
                 }
-                return loadGeneral();
-            }).catch(function (error) { window.alert(error.message); });
+            }
+
+            findPage();
+            new MutationObserver(findPage).observe(document.documentElement, { childList: true, subtree: true });
         }());
