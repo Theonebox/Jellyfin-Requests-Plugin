@@ -45,8 +45,8 @@
                     <input id="requestsAdminSearch" type="search" placeholder="Search title, requester, notes, or provider ID" aria-label="Search requests">
                     <select id="requestsAdminStatus" aria-label="Status filter">
                         <option value="">All statuses</option>
-                        <option>Pending</option><option>Approved</option><option>Denied</option>
-                        <option>InProgress</option><option>Available</option><option>Completed</option><option>Cancelled</option>
+                        <option value="Pending">Pending</option><option value="Approved">Approved</option><option value="Denied">Denied</option>
+                        <option value="InProgress">In Progress</option><option value="Available">Available</option><option value="Completed">Completed</option><option value="Cancelled">Cancelled</option>
                     </select>
                     <select id="requestsAdminMediaType" aria-label="Media type filter">
                         <option value="">All media types</option><option value="Movie">Movie</option><option value="TV Show">TV Show</option>
@@ -121,5 +121,6 @@
         .requestsConfigPage .requests-status-in-progress { color: #ffa726; }
         .requestsConfigPage .requests-status-available, .requestsConfigPage .requests-status-completed { color: #42a5f5; }
         .requestsConfigPage .requests-status-pending { color: #bdbdbd; }
+        .requestsConfigPage .requests-status-select option { background-color: #292929; }
     </style>
 </div>

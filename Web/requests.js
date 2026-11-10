@@ -346,10 +346,28 @@
         }
         const status = state.requested.get(mediaKey(item));
         if (status) {
-            return { inLibrary: false, text: statusLabel(status), icon: "how_to_vote", indicatorClass: "requestsIndicator", statusClass: statusClass(status) };
+            // Same indicator markup Jellyfin uses for its own card badges (countIndicator gets the
+            // theme's accent background, like the played check), with a clear icon per status.
+            return {
+                inLibrary: false,
+                text: statusLabel(status),
+                icon: STATUS_ICONS[status] || "schedule",
+                indicatorClass: "countIndicator requestsIndicator",
+                statusClass: statusClass(status)
+            };
         }
         return null;
     }
+
+    const STATUS_ICONS = {
+        Pending: "schedule",
+        Approved: "thumb_up",
+        InProgress: "sync",
+        Available: "check",
+        Completed: "check",
+        Denied: "block",
+        Cancelled: "block"
+    };
 
     function updateCard(card, item) {
         const indicators = card.querySelector(".cardIndicators");

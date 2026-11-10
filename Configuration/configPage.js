@@ -91,6 +91,11 @@ function statusClass(status) {
         .replace(/[^a-z-]/g, "");
 }
 
+// "InProgress" -> "In Progress" for display; the API value stays unchanged.
+function statusLabel(status) {
+    return String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1 $2");
+}
+
 export default function (view) {
     const $ = (selector) => view.querySelector(selector);
 
@@ -280,7 +285,7 @@ export default function (view) {
     function renderDetails(request) {
         const providerIds = value(request, "providerIds") || {};
         const history = (value(request, "statusHistory") || [])
-            .map((change) => `${value(change, "status")} (${formatDate(value(change, "changedAtUtc"))})`)
+            .map((change) => `${statusLabel(value(change, "status"))} (${formatDate(value(change, "changedAtUtc"))})`)
             .join(" → ");
         const year = value(request, "productionYear");
 
@@ -292,7 +297,7 @@ export default function (view) {
             ["Media Type", value(request, "mediaType")],
             ["Scope", scopeLabel(request)],
             ["Quality", value(request, "mediaQuality")],
-            ["Status", value(request, "status")],
+            ["Status", statusLabel(value(request, "status"))],
             ["Status History", history],
             ["Search Provider", value(request, "sourceProvider")],
             ["Provider IDs", Object.entries(providerIds).map((pair) => `${pair[0]}: ${pair[1]}`).join(", ")],
@@ -327,8 +332,10 @@ export default function (view) {
             + `<td>${escapeHtml(scopeLabel(request))}</td>`
             + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
             + `<td>${escapeHtml(value(request, "note") || "")}</td>`
-            + `<td><select class="${statusClass(status)}" data-status aria-label="Request status">${STATUS_OPTIONS.map((option) =>
-                `<option value="${option}"${option === status ? " selected" : ""}>${option}</option>`).join("")}</select></td>`
+            // Each option carries its own status class so the open list shows every status in its
+            // own colour; the select's class only colours the closed control.
+            + `<td><select class="requests-status-select ${statusClass(status)}" data-status aria-label="Request status">${STATUS_OPTIONS.map((option) =>
+                `<option class="${statusClass(option)}" value="${option}"${option === status ? " selected" : ""}>${statusLabel(option)}</option>`).join("")}</select></td>`
             + `<td><button type="button" class="raised emby-button" data-delete title="Delete request">Delete</button></td>`;
 
         row.querySelector("[data-details]").addEventListener("click", function () {
@@ -345,8 +352,8 @@ export default function (view) {
                 Object.assign(request, updated || {});
                 request.status = next;
                 request.Status = next;
-                select.className = statusClass(next);
-                setMessage("#requestsAdminMessage", `"${value(request, "title")}" marked ${next}.`);
+                select.className = `requests-status-select ${statusClass(next)}`;
+                setMessage("#requestsAdminMessage", `"${value(request, "title")}" marked ${statusLabel(next)}.`);
             } catch (error) {
                 select.value = previous;
                 setMessage("#requestsAdminMessage", error.message, true);

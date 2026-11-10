@@ -52,13 +52,20 @@
         }
         const style = document.createElement("style");
         style.id = "requests-navigation-style";
-        // Hide Jellyfin's current view while Requests is open so the theme background shows through.
+        // While Requests is open, hide everything that normally sits behind/around the page:
+        // Jellyfin's current view, item backdrops, and the Media Bar plugin's slideshow
+        // (#slides-container, which it mounts directly under <body> with its own Play buttons).
+        // The view itself is painted with the theme's page background (copied from <html> when
+        // opened); the :where() keeps that rule zero-specificity so custom CSS can override it.
         style.textContent =
             `html.${OPEN_CLASS} .mainAnimatedPages, html.${OPEN_CLASS} .mainAnimated,`
             + ` html.${OPEN_CLASS} #reactRoot > .MuiBox-root > main { visibility: hidden !important; }`
+            + `html.${OPEN_CLASS} #slides-container, html.${OPEN_CLASS} .backdropContainer { display: none !important; }`
             + `#${VIEW_ID}[hidden] { display: none !important; }`
             + `#${VIEW_ID} { position: fixed; left: 0; right: 0; bottom: 0; overflow-y: auto;`
-            + ` overscroll-behavior: contain; z-index: 2; -webkit-overflow-scrolling: touch; }`
+            + ` overscroll-behavior: contain; z-index: 998; -webkit-overflow-scrolling: touch; }`
+            + `:where(#${VIEW_ID}) { background-color: var(--requests-page-background-color, #101010);`
+            + ` background-image: var(--requests-page-background-image, none); background-size: cover; background-attachment: fixed; }`
             + `#${BUTTON_ID}.requestsHeaderButton-active { opacity: 1; }`
             + `#${BUTTON_ID}.MuiIconButton-root.requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2); }`;
         document.head.append(style);
@@ -68,6 +75,14 @@
 
     // Material "how_to_vote" icon, used in the React header which draws its icons as inline SVG.
     const HOW_TO_VOTE_PATH = "M18 13h-.68l-2 2h1.91L19 17H5l1.78-2h2.05l-2-2H6l-3 3v4c0 1.1.89 2 1.99 2H19c1.1 0 2-.89 2-2v-4l-3-3zm-1-5.05l-4.95 4.95-3.54-3.54 4.95-4.95L17 7.95zm-4.24-5.66L6.39 8.66c-.39.39-.39 1.02 0 1.41l4.95 4.95c.39.39 1.02.39 1.41 0l6.36-6.36c.39-.39.39-1.02 0-1.41L14.16 2.3c-.38-.4-1.01-.4-1.4-.01z";
+
+    // Dashboard and other administrator-only routes, e.g. #/dashboard/plugins, #/configurationpage?name=…
+    const DASHBOARD_ROUTE = /^#?\/?(dashboard|configurationpage|metadata|edititemmetadata|librarysetup|networking|devices|serveractivity|userprofiles|useredit|scheduledtasks|plugins)(\/|\?|\.html|$)/i;
+
+    function isDashboardRoute() {
+        const route = (window.location.hash || "").replace(/^#!?/, "") || window.location.pathname.replace(/^.*\/web\/?/, "/");
+        return DASHBOARD_ROUTE.test(route);
+    }
 
     function isVisible(element) {
         return Boolean(element && element.getClientRects().length);
@@ -146,7 +161,9 @@
         addScheduled = false;
         let button = document.getElementById(BUTTON_ID);
 
-        if (!isAuthenticated()) {
+        // No button when signed out, or on the administrator dashboard (its own layout with a
+        // side drawer; requests are managed from the plugin settings page there).
+        if (!isAuthenticated() || isDashboardRoute()) {
             if (button) {
                 button.remove();
             }
@@ -176,7 +193,15 @@
     function scheduleEnsureButton() {
         if (!addScheduled) {
             addScheduled = true;
-            window.requestAnimationFrame(ensureButton);
+            // rAF for a prompt update; the timeout covers background tabs where rAF is paused.
+            // ensureButton clears addScheduled, so whichever fires second is a cheap no-op.
+            const run = function () {
+                if (addScheduled) {
+                    ensureButton();
+                }
+            };
+            window.requestAnimationFrame(run);
+            window.setTimeout(run, 250);
         }
     }
 
@@ -259,11 +284,70 @@
         return Boolean(view && !view.hidden);
     }
 
+    // Copy the theme's page background (set on <html>/<body> by the theme or custom CSS) so the
+    // Requests view is opaque but still looks like a native page.
+    function applyThemeBackground(view) {
+        for (const element of [document.documentElement, document.body]) {
+            const style = window.getComputedStyle(element);
+            const color = style.backgroundColor;
+            if (color && color !== "transparent" && !/rgba\(.*,\s*0\)$/.test(color)) {
+                view.style.setProperty("--requests-page-background-color", color);
+                view.style.setProperty("--requests-page-background-image", style.backgroundImage || "none");
+                return;
+            }
+        }
+    }
+
+    // Media Bar plays trailers in its slideshow; pause them while Requests covers the page and
+    // resume only the ones we paused.
+    const pausedMedia = new Set();
+
+    function pauseBackgroundMedia() {
+        const container = document.getElementById("slides-container");
+        if (!container) {
+            return;
+        }
+        container.querySelectorAll("video").forEach(function (video) {
+            if (!video.paused) {
+                video.pause();
+                pausedMedia.add(video);
+            }
+        });
+        container.querySelectorAll('iframe[src*="youtube"]').forEach(function (frame) {
+            try {
+                frame.contentWindow.postMessage(JSON.stringify({ event: "command", func: "pauseVideo", args: [] }), "*");
+                pausedMedia.add(frame);
+            } catch (_) {
+                // Cross-origin player without the JS API; it's hidden anyway.
+            }
+        });
+    }
+
+    function resumeBackgroundMedia() {
+        pausedMedia.forEach(function (media) {
+            if (!media.isConnected) {
+                return;
+            }
+            if (media.tagName === "VIDEO") {
+                media.play().catch(function () { /* autoplay may be blocked; ignore */ });
+            } else {
+                try {
+                    media.contentWindow.postMessage(JSON.stringify({ event: "command", func: "playVideo", args: [] }), "*");
+                } catch (_) {
+                    // Ignore.
+                }
+            }
+        });
+        pausedMedia.clear();
+    }
+
     async function open() {
         const view = await getView();
+        applyThemeBackground(view);
         view.style.top = headerBottom() + "px";
         view.hidden = false;
         view.scrollTop = 0;
+        pauseBackgroundMedia();
         document.documentElement.classList.add(OPEN_CLASS);
         document.getElementById(BUTTON_ID)?.classList.add("requestsHeaderButton-active");
         document.getElementById(BUTTON_ID)?.setAttribute("aria-pressed", "true");
@@ -279,6 +363,7 @@
             if (window.RequestsPage && typeof window.RequestsPage.hide === "function") {
                 window.RequestsPage.hide();
             }
+            resumeBackgroundMedia();
         }
         document.documentElement.classList.remove(OPEN_CLASS);
         const button = document.getElementById(BUTTON_ID);
