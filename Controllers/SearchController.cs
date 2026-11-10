@@ -35,9 +35,40 @@ public sealed class SearchController : ControllerBase
                     ? MediaCategory.All
                     : MediaCategory.Movies;
 
+            var configuration = Plugin.Instance?.Configuration;
+            if (configuration is not null)
+            {
+                // Never search a media type the administrator has disabled.
+                MediaCategory? allowed = (category, configuration.EnableMovies, configuration.EnableTvShows) switch
+                {
+                    (MediaCategory.All, true, true) => MediaCategory.All,
+                    (MediaCategory.All, true, false) or (MediaCategory.Movies, true, _) => MediaCategory.Movies,
+                    (MediaCategory.All, false, true) or (MediaCategory.TVShows, _, true) => MediaCategory.TVShows,
+                    _ => null
+                };
+
+                if (allowed is null)
+                {
+                    return BadRequest(new { error = "Requests for this media type are currently disabled." });
+                }
+
+                category = allowed.Value;
+            }
+
             var results = await MetadataIdentify
                 .SearchAsync(query, category, cancellationToken)
                 .ConfigureAwait(false);
+
+            // Resolve library availability here in one pass instead of one HTTP call per result.
+            var availability = Plugin.LibraryAvailability;
+            if (availability is not null)
+            {
+                foreach (var result in results)
+                {
+                    result.InLibrary = availability.IsInLibrary(result.ProviderIds.Values);
+                }
+            }
+
             return Ok(results);
         }
         catch (Exception exception) when (

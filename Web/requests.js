@@ -1,49 +1,94 @@
 (function () {
     "use strict";
 
-    const page = document.querySelector("#requestsPage");
-    if (!page || page.dataset.initialized === "true") {
+    // Public Requests page. Loaded once by Requests-navigation.js after requests.html is in the DOM.
+    // Exposes window.RequestsPage = { show, hide, hasOpenDialog } for the navigation script.
+
+    if (window.RequestsPage) {
         return;
     }
-    page.dataset.initialized = "true";
 
-    const form = page.querySelector("#requestsSearchForm");
-    const input = page.querySelector("#requestsSearchInput");
-    const button = page.querySelector("#requestsSearchButton");
-    const mediaTypeSelect = page.querySelector("#requestsMediaType");
-    const status = page.querySelector("#requestsStatus");
-    const results = page.querySelector("#requestsResults");
-    const requestedKeys = new Set();
-    let mediaQualityOptions = ["720p", "1080p", "4K"];
-
-    // Builds an absolute API URL that respects the server's base path (e.g. /jellyfin).
-    function apiUrl(url) {
-        const apiClient = window.ApiClient;
-        const relative = String(url).replace(/^\/+/, "");
-        return apiClient && typeof apiClient.getUrl === "function"
-            ? apiClient.getUrl(relative)
-            : "/" + relative;
+    const page = document.getElementById("requestsPage");
+    if (!page) {
+        return;
     }
 
-    function apiHeaders() {
-        const apiClient = window.ApiClient;
-        const token = apiClient && typeof apiClient.accessToken === "function"
-            ? apiClient.accessToken()
-            : null;
+    const $ = (selector, root) => (root || page).querySelector(selector);
+
+    // The dialog lives under <body> so it layers above Jellyfin's header.
+    const dialog = $("#requestsDialog");
+    document.body.append(dialog);
+    const d = (selector) => dialog.querySelector(selector);
+
+    const el = {
+        form: $("#requestsSearchForm"),
+        input: $("#requestsSearchInput"),
+        type: $("#requestsMediaType"),
+        typeContainer: $(".requestsSearch-type"),
+        searchButton: $("#requestsSearchButton"),
+        status: $("#requestsStatus"),
+        results: $("#requestsResults"),
+        myStatus: $("#requestsMyStatus"),
+        myList: $("#requestsMyList"),
+        dialogTitle: d("#requestsDialogTitle"),
+        dialogPoster: d("#requestsDialogPoster"),
+        dialogMeta: d("#requestsDialogMeta"),
+        dialogOverview: d("#requestsDialogOverview"),
+        tvScope: d("#requestsTvScope"),
+        seasonList: d("#requestsSeasonList"),
+        episodeList: d("#requestsEpisodeList"),
+        episodeIds: d("#requestsEpisodeIds"),
+        quality: d("#requestsQuality"),
+        note: d("#requestsNote"),
+        dialogMessage: d("#requestsDialogMessage"),
+        submit: d("#requestsDialogSubmit")
+    };
+
+    const DEFAULT_QUALITY = ["720p", "1080p", "4K"];
+    const MAX_SEASONS = 30;
+    const EPISODE_PATTERN = /^S\d{1,3}E\d{1,4}$/i;
+
+    const state = {
+        results: [],
+        myRequests: [],
+        requested: new Map(), // mediaKey -> status
+        quality: DEFAULT_QUALITY,
+        media: { movies: true, tvShows: true },
+        dialogItem: null,
+        lastFocus: null,
+        searchController: null,
+        submitting: false
+    };
+
+    // ---------- API ----------
+
+    function apiUrl(path) {
+        const client = window.ApiClient;
+        const relative = String(path).replace(/^\/+/, "");
+        return client && typeof client.getUrl === "function" ? client.getUrl(relative) : "../" + relative;
+    }
+
+    function authHeaders() {
+        const client = window.ApiClient;
+        const token = client && typeof client.accessToken === "function" ? client.accessToken() : "";
         return token ? { Authorization: `MediaBrowser Token="${token}"` } : {};
     }
 
-    async function apiRequest(url, options) {
-        const response = await fetch(apiUrl(url), {
-            ...options,
-            headers: {
-                Accept: "application/json",
-                ...apiHeaders(),
-                ...(options && options.headers ? options.headers : {})
-            }
+    async function api(path, options) {
+        options = options || {};
+        const headers = { Accept: "application/json", ...authHeaders() };
+        if (options.body !== undefined) {
+            headers["Content-Type"] = "application/json";
+        }
+
+        const response = await fetch(apiUrl(path), {
+            method: options.method || "GET",
+            headers: headers,
+            body: options.body === undefined ? undefined : JSON.stringify(options.body),
+            signal: options.signal
         });
 
-        // DELETE returns 204 with no body, so never assume JSON.
+        // 204 No Content (e.g. DELETE) has no body, so never assume JSON.
         const text = await response.text();
         let body = null;
         if (text) {
@@ -55,564 +100,590 @@
         }
 
         if (!response.ok) {
-            const message = body && typeof body === "object" && (body.error || body.Error || body.message || body.title);
-            throw new Error(`${message || "Unable to complete the Requests operation."} (${response.status})`);
+            const message = typeof body === "string" && body.length < 300
+                ? body
+                : body && (body.error || body.Error || body.message || body.title);
+            const error = new Error(message || `Request failed (${response.status}).`);
+            error.status = response.status;
+            throw error;
         }
 
         return body;
     }
 
-    function escapeHtml(value) {
-        const element = document.createElement("span");
-        element.textContent = value == null ? "" : String(value);
-        return element.innerHTML;
+    // Jellyfin returns PascalCase by default; plugin DTOs may be camelCase. Read either.
+    function field(item, name) {
+        if (!item) {
+            return undefined;
+        }
+        const value = item[name];
+        return value !== undefined && value !== null ? value : item[name.charAt(0).toUpperCase() + name.slice(1)];
     }
 
-    function valueFor(item, camelName, pascalName) {
-        const value = item && item[camelName];
-        return value !== undefined && value !== null
-            ? value
-            : item && item[pascalName];
-    }
+    // ---------- helpers ----------
 
-    function normalizeResult(item) {
-        const providerIds = valueFor(item, "providerIds", "ProviderIds") || {};
-        return {
-            providerId: String(valueFor(item, "providerId", "ProviderId") || ""),
-            name: String(valueFor(item, "name", "Name") || ""),
-            overview: String(valueFor(item, "overview", "Overview") || ""),
-            mediaType: String(valueFor(item, "mediaType", "MediaType") || ""),
-            posterUrl: String(valueFor(item, "posterUrl", "PosterUrl") || ""),
-            productionYear: valueFor(item, "productionYear", "ProductionYear") || null,
-            sourceProvider: String(valueFor(item, "sourceProvider", "SourceProvider") || ""),
-            mediaCategory: String(valueFor(item, "mediaCategory", "MediaCategory") || ""),
-            providerIds: providerIds
-        };
-    }
-
-    // Search results use "Movie"/"TV" while stored requests use "Movie"/"TV Show",
-    // so collapse both to a stable kind before comparing.
-    function mediaKind(mediaType) {
-        return String(mediaType || "").trim().toLowerCase().startsWith("tv") ? "tv" : "movie";
+    function isTv(item) {
+        const type = String(field(item, "mediaType") || "").toLowerCase();
+        const category = String(field(item, "mediaCategory") || "").toLowerCase();
+        return type.startsWith("tv") || category === "tvshows";
     }
 
     function mediaKey(item) {
-        return `${mediaKind(item.mediaType)}:${item.providerId}`;
-    }
-
-    function releaseYear(item) {
-        return item.productionYear ? String(item.productionYear) : "";
-    }
-
-    function mediaLabel(mediaType) {
-        return String(mediaType || "").toLowerCase() === "tv" ? "TV Show" : "Movie";
+        const id = field(item, "providerId") || field(item, "mediaId") || "";
+        return id ? `${isTv(item) ? "tv" : "movie"}:${String(id).toLowerCase()}` : "";
     }
 
     function statusClass(status) {
-        return "requests-status-" + String(status || "Pending")
-            .replace(/([a-z])([A-Z])/g, "$1-$2")
-            .toLowerCase()
-            .replace(/[^a-z-]/g, "");
+        return "requestsStatus-" + String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
     }
 
-    function currentUserId() {
-        const apiClient = window.ApiClient;
-        if (apiClient && typeof apiClient.getCurrentUserId === "function") {
-            return apiClient.getCurrentUserId() || "";
+    function statusLabel(status) {
+        return String(status || "Pending").replace(/([a-z])([A-Z])/g, "$1 $2");
+    }
+
+    function scopeLabel(request) {
+        switch (field(request, "requestScope")) {
+            case "SeasonSelection":
+                return "Season " + (field(request, "requestedSeasonNumbers") || []).join(", ");
+            case "EpisodeSelection":
+                return (field(request, "requestedEpisodeNames") || field(request, "requestedEpisodeIds") || []).join(", ");
+            case "EntireSeries":
+                return "Entire series";
+            default:
+                return "";
         }
-        return "";
+    }
+
+    function formatDate(value) {
+        if (!value) {
+            return "";
+        }
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString();
+    }
+
+    function cssUrl(url) {
+        return `url("${String(url).replace(/["\\\n\r]/g, encodeURIComponent)}")`;
+    }
+
+    function icon(name, className) {
+        const span = document.createElement("span");
+        span.className = `material-icons ${name}${className ? " " + className : ""}`;
+        span.setAttribute("aria-hidden", "true");
+        return span;
+    }
+
+    function setMessage(element, text, isError) {
+        element.textContent = text || "";
+        element.classList.toggle("requestsMessage-error", Boolean(isError));
+    }
+
+    function setButtonText(button, text) {
+        const label = button.querySelector("span") || button;
+        label.textContent = text;
+    }
+
+    // ---------- settings ----------
+
+    function fillSelect(select, values, labels) {
+        const previous = select.value;
+        select.replaceChildren(...values.map(function (value, index) {
+            return new Option(labels ? labels[index] : value, value);
+        }));
+        if (values.includes(previous)) {
+            select.value = previous;
+        }
+    }
+
+    async function loadSettings() {
+        const [quality, media] = await Promise.allSettled([
+            api("Requests/Configuration/QualityOptions"),
+            api("Requests/Configuration/MediaOptions")
+        ]);
+
+        if (quality.status === "fulfilled") {
+            const options = field(quality.value, "options");
+            state.quality = Array.isArray(options) && options.length ? options : DEFAULT_QUALITY;
+        }
+        fillSelect(el.quality, state.quality);
+
+        if (media.status === "fulfilled") {
+            state.media = {
+                movies: Boolean(field(media.value, "movies")),
+                tvShows: Boolean(field(media.value, "tvShows"))
+            };
+        }
+
+        const values = [];
+        const labels = [];
+        if (state.media.movies && state.media.tvShows) {
+            values.push("All");
+            labels.push("All");
+        }
+        if (state.media.movies) {
+            values.push("Movies");
+            labels.push("Movies");
+        }
+        if (state.media.tvShows) {
+            values.push("TV Shows");
+            labels.push("TV Shows");
+        }
+        fillSelect(el.type, values, labels);
+        // Only one type enabled: nothing to choose.
+        el.typeContainer.hidden = values.length <= 1;
+
+        const label = state.media.movies && !state.media.tvShows ? "Search movies"
+            : !state.media.movies && state.media.tvShows ? "Search TV shows"
+                : "Search movies and TV shows";
+        $("label[for=requestsSearchInput]").textContent = label;
+    }
+
+    // ---------- my requests ----------
+
+    function renderMyRequests() {
+        el.myList.replaceChildren();
+        if (state.myRequests.length === 0) {
+            setMessage(el.myStatus, "You haven't requested anything yet.");
+            return;
+        }
+        setMessage(el.myStatus, "");
+
+        const fragment = document.createDocumentFragment();
+        state.myRequests.forEach(function (request) {
+            const status = field(request, "status") || "Pending";
+            const row = document.createElement("div");
+            row.className = "listItem listItem-border requestsMine-item";
+
+            const image = document.createElement("div");
+            image.className = "listItemImage listItemImage-large";
+            const poster = field(request, "posterUrl");
+            if (poster) {
+                image.style.backgroundImage = cssUrl(poster);
+            }
+
+            const body = document.createElement("div");
+            body.className = "listItemBody two-line";
+            const title = document.createElement("div");
+            title.className = "listItemBodyText";
+            const year = field(request, "productionYear");
+            title.textContent = (field(request, "title") || "Untitled") + (year ? ` (${year})` : "");
+            const details = document.createElement("div");
+            details.className = "listItemBodyText secondary";
+            details.textContent = [
+                field(request, "mediaType"),
+                scopeLabel(request),
+                field(request, "mediaQuality"),
+                formatDate(field(request, "requestedAtUtc")) && "Requested " + formatDate(field(request, "requestedAtUtc"))
+            ].filter(Boolean).join(" · ");
+            body.append(title, details);
+
+            const badge = document.createElement("span");
+            badge.className = `requestsStatusBadge ${statusClass(status)}`;
+            badge.textContent = statusLabel(status);
+
+            row.append(image, body, badge);
+
+            if (status === "Pending") {
+                const cancel = document.createElement("button");
+                cancel.type = "button";
+                cancel.className = "listItemButton paper-icon-button-light";
+                cancel.title = "Cancel request";
+                cancel.setAttribute("aria-label", `Cancel request for ${field(request, "title") || "this item"}`);
+                cancel.append(icon("delete"));
+                cancel.addEventListener("click", function () {
+                    cancelRequest(request, cancel);
+                });
+                row.append(cancel);
+            }
+
+            fragment.append(row);
+        });
+        el.myList.append(fragment);
     }
 
     async function loadMyRequests() {
-        const list = page.querySelector("#requestsMyList");
-        const myStatus = page.querySelector("#requestsMyStatus");
-        if (!list || !myStatus) {
-            return;
+        if (!state.myRequests.length) {
+            setMessage(el.myStatus, "Loading...");
         }
-
-        list.replaceChildren();
-        myStatus.className = "requests-status";
-        myStatus.textContent = "Loading...";
-
         try {
-            const visibleRequests = await apiRequest("/Requests/my", { method: "GET" });
-
-            requestedKeys.clear();
-            for (const request of visibleRequests || []) {
-                const kind = mediaKind(valueFor(request, "mediaType", "MediaType"));
-                const id = valueFor(request, "providerId", "ProviderId") || valueFor(request, "mediaId", "MediaId") || "";
-                if (id) {
-                    requestedKeys.add(`${kind}:${id}`);
+            const requests = await api("Requests/my");
+            state.myRequests = Array.isArray(requests) ? requests : [];
+            state.requested.clear();
+            state.myRequests.forEach(function (request) {
+                const key = mediaKey(request);
+                // Prefer the "whole item" request's status when a show has several requests.
+                if (key && (!state.requested.has(key) || field(request, "requestScope") === "EntireSeries")) {
+                    state.requested.set(key, field(request, "status") || "Pending");
                 }
-            }
-
-            if (visibleRequests.length === 0) {
-                myStatus.textContent = "No requested media yet.";
-                return;
-            }
-
-            myStatus.textContent = `${visibleRequests.length} request${visibleRequests.length === 1 ? "" : "s"}`;
-            visibleRequests.forEach(function (request) {
-                const card = document.createElement("article");
-                card.className = "requests-my-card";
-                const posterUrl = valueFor(request, "posterUrl", "PosterUrl") || "";
-                if (posterUrl) {
-                    const poster = document.createElement("img");
-                    poster.className = "requests-card-poster";
-                    poster.src = posterUrl;
-                    poster.alt = valueFor(request, "title", "Title") || "Requested media";
-                    poster.loading = "lazy";
-                    card.append(poster);
-                }
-                const title = document.createElement("h3");
-                title.textContent = valueFor(request, "title", "Title") || "Untitled";
-                const mediaType = valueFor(request, "mediaType", "MediaType") || "";
-                const scope = valueFor(request, "requestScope", "RequestScope") || "";
-                const quality = valueFor(request, "mediaQuality", "MediaQuality") || "";
-                const statusValue = valueFor(request, "status", "Status") || "Pending";
-                const detail = document.createElement("div");
-                detail.textContent = [mediaType, scope.replace(/([A-Z])/g, " $1").trim(), quality].filter(Boolean).join(" · ");
-                const state = document.createElement("div");
-                state.className = `requests-my-status ${statusClass(statusValue)}`;
-                state.textContent = `Status: ${statusValue}`;
-                const requesterId = valueFor(request, "userId", "UserId") || "";
-                const requesterName = valueFor(request, "userName", "UserName") || "Unknown user";
-                const requestDate = valueFor(request, "requestDate", "RequestDate")
-                    || valueFor(request, "requestedAtUtc", "RequestedAtUtc");
-                const ownership = document.createElement("div");
-                ownership.textContent = `Requester: ${requesterName} (${requesterId || "Unknown ID"})`;
-                const date = document.createElement("div");
-                date.textContent = `Request Date: ${requestDate ? new Date(requestDate).toLocaleString() : "Unknown"}`;
-                const actions = document.createElement("div");
-                actions.className = "requests-my-actions";
-                const cancelButton = document.createElement("button");
-                cancelButton.type = "button";
-                cancelButton.className = "raised emby-button requests-my-cancel";
-                cancelButton.textContent = "Cancel Request";
-                if (statusValue !== "Pending") {
-                    cancelButton.disabled = true;
-                    cancelButton.textContent = `Cannot cancel (${statusValue})`;
-                } else {
-                    cancelButton.addEventListener("click", async function () {
-                    cancelButton.disabled = true;
-                    cancelButton.textContent = "Cancelling...";
-                    try {
-                        const requestId = valueFor(request, "id", "Id");
-                        await apiRequest(`/Requests/${requestId}`, { method: "DELETE" });
-                        await loadMyRequests();
-                        if (input.value.trim()) {
-                            await search(input.value.trim());
-                        }
-                    } catch (error) {
-                        cancelButton.disabled = false;
-                        cancelButton.textContent = "Cancel Request";
-                        myStatus.className = "requests-status error";
-                        myStatus.textContent = error.message || "Unable to cancel the request.";
-                    }
-                    });
-                }
-                actions.append(cancelButton);
-                card.append(title, detail, ownership, date, state, actions);
-                list.append(card);
             });
+            renderMyRequests();
+            refreshCardStates();
         } catch (error) {
-            myStatus.className = "requests-status error";
-            myStatus.textContent = error.message || "Unable to load requested media.";
+            setMessage(el.myStatus, error.message || "Unable to load your requests.", true);
         }
     }
 
-    async function loadExistingRequests() {
-        await loadMyRequests();
-    }
-
-    function populateQualitySelect(select, options) {
-        select.replaceChildren();
-        for (const option of options) {
-            const element = document.createElement("option");
-            element.value = option;
-            element.textContent = option;
-            select.append(element);
-        }
-    }
-
-    async function loadQualityOptions() {
-        try {
-            const data = await apiRequest("/Requests/Configuration/QualityOptions", { method: "GET" });
-            const options = Array.isArray(data.options) && data.options.length
-                ? data.options
-                : ["720p", "1080p", "4K"];
-            mediaQualityOptions = options;
-            populateQualitySelect(page.querySelector("#requestsMovieQuality"), options);
-            populateQualitySelect(page.querySelector("#requestsTvQuality"), options);
-        } catch (_) {
-            populateQualitySelect(page.querySelector("#requestsMovieQuality"), mediaQualityOptions);
-            populateQualitySelect(page.querySelector("#requestsTvQuality"), mediaQualityOptions);
-        }
-    }
-
-    async function loadMediaOptions() {
-        try {
-            const options = await apiRequest("/Requests/Configuration/MediaOptions", { method: "GET" });
-            mediaTypeSelect.replaceChildren();
-            if (options.movies) {
-                mediaTypeSelect.append(new Option("Movies", "Movies"));
-            }
-            if (options.tvShows) {
-                mediaTypeSelect.append(new Option("TV Shows", "TV Shows"));
-            }
-            if (options.movies && options.tvShows) {
-                mediaTypeSelect.append(new Option("All", "All"));
-            }
-        } catch (_) {
-            // Keep the default options when configuration cannot be read.
-        }
-    }
-
-    function createPoster(item) {
-        const poster = document.createElement("div");
-        poster.className = "requests-card-poster requests-card-poster-placeholder";
-        poster.textContent = item.posterUrl ? "" : "No poster";
-
-        if (item.posterUrl) {
-            const image = document.createElement("img");
-            image.className = "requests-card-poster";
-            image.alt = item.name || "Media poster";
-            image.loading = "lazy";
-            image.src = item.posterUrl;
-            image.addEventListener("error", function () {
-                image.replaceWith(poster);
-            });
-            return image;
-        }
-
-        return poster;
-    }
-
-    function closeTvModal() {
-        const modal = page.querySelector("#requestsTvModal");
-        modal.hidden = true;
-        modal.dataset.item = "";
-    }
-
-    function openTvModal(item, requestButton) {
-        const modal = page.querySelector("#requestsTvModal");
-        const seasonList = page.querySelector("#requestsSeasonList");
-        const episodeList = page.querySelector("#requestsEpisodeList");
-        const submit = page.querySelector("#requestsTvSubmit");
-
-        seasonList.replaceChildren();
-        for (let season = 1; season <= 20; season++) {
-            const label = document.createElement("label");
-            const checkbox = document.createElement("input");
-            checkbox.type = "checkbox";
-            checkbox.className = "requests-season-checkbox";
-            checkbox.value = String(season);
-            label.append(checkbox, document.createTextNode(` Season ${season}`));
-            seasonList.append(label);
-        }
-
-        // Reset the form so a previous show's selections don't carry over.
-        page.querySelector('input[name="requestsTvScope"][value="EntireSeries"]').checked = true;
-        seasonList.hidden = true;
-        episodeList.hidden = true;
-        page.querySelector("#requestsEpisodeIds").value = "";
-        page.querySelector("#requestsTvModalTitle").textContent = `Request ${item.name || "TV Show"}`;
-        modal.dataset.item = JSON.stringify(item);
-        modal.dataset.button = "tv";
-        page.querySelector("#requestsTvNote").value = "";
-        modal.hidden = false;
-
-        submit.onclick = async function () {
-            await submitTvRequest(item, requestButton, submit);
-        };
-    }
-
-    async function submitTvRequest(item, requestButton, submitButton) {
-        const scope = page.querySelector('input[name="requestsTvScope"]:checked').value;
-        const note = page.querySelector("#requestsTvNote").value.trim();
-        const mediaQuality = page.querySelector("#requestsTvQuality").value || "";
-        const seasonNumbers = Array.from(page.querySelectorAll(".requests-season-checkbox:checked"))
-            .map(function (checkbox) { return Number(checkbox.value); });
-        const episodeText = page.querySelector("#requestsEpisodeIds").value;
-        const episodeIds = episodeText.split(",").map(value => value.trim()).filter(Boolean);
-        const episodeNames = episodeIds.map(value => value.toUpperCase());
-
-        if (scope === "SeasonSelection" && seasonNumbers.length === 0) {
-            status.className = "requests-status error";
-            status.textContent = "Select at least one season.";
+    async function cancelRequest(request, button) {
+        const title = field(request, "title") || "this item";
+        if (!window.confirm(`Cancel your request for ${title}?`)) {
             return;
         }
-        if (scope === "EpisodeSelection" && episodeIds.length === 0) {
-            status.className = "requests-status error";
-            status.textContent = "Enter at least one episode ID.";
-            return;
-        }
-
-        submitButton.disabled = true;
-        submitButton.textContent = "Requesting...";
-
+        button.disabled = true;
         try {
-            await apiRequest("/Requests", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    mediaId: item.providerId || "",
-                    title: item.name || "",
-                    mediaType: "TV Show",
-                    overview: item.overview || "",
-                    posterUrl: item.posterUrl || "",
-                    providerId: item.providerId || "",
-                    providerIds: item.providerIds || {},
-                    productionYear: item.productionYear || null,
-                    sourceProvider: item.sourceProvider || "",
-                    mediaCategory: "TVShows",
-                    requestScope: scope,
-                    requestKind: scope === "SeasonSelection" ? "Season" : scope === "EpisodeSelection" ? "Episode" : "Series",
-                    requestedSeasonNumbers: scope === "SeasonSelection" ? seasonNumbers : [],
-                    requestedEpisodeIds: scope === "EpisodeSelection" ? episodeIds : [],
-                    requestedEpisodeNames: scope === "EpisodeSelection" ? episodeNames : [],
-                    note: note,
-                    mediaQuality: mediaQuality
-                })
-            });
-            requestedKeys.add(mediaKey(item));
-            closeTvModal();
-            requestButton.textContent = "✓ Requested";
-            requestButton.disabled = true;
-            requestButton.classList.add("requested");
-            loadMyRequests();
+            await api(`Requests/${field(request, "id")}`, { method: "DELETE" });
+            await loadMyRequests();
         } catch (error) {
-            status.className = "requests-status error";
-            status.textContent = error.message || "Unable to submit the request.";
-        } finally {
-            submitButton.disabled = false;
-            submitButton.textContent = "Submit Request";
+            button.disabled = false;
+            setMessage(el.myStatus, error.message || "Unable to cancel the request.", true);
         }
     }
 
-    function closeMovieModal() {
-        page.querySelector("#requestsMovieModal").hidden = true;
-        page.querySelector("#requestsMovieNote").value = "";
-    }
+    // ---------- search results ----------
 
-    function openMovieModal(item, requestButton) {
-        const modal = page.querySelector("#requestsMovieModal");
-        const submit = page.querySelector("#requestsMovieSubmit");
-        page.querySelector("#requestsMovieNote").value = "";
-        page.querySelector("#requestsMovieQuality").value =
-            page.querySelector("#requestsMovieQuality").options[0]?.value || "";
-        modal.hidden = false;
-        submit.onclick = async function () {
-            const note = page.querySelector("#requestsMovieNote").value.trim();
-            const mediaQuality = page.querySelector("#requestsMovieQuality").value || "";
-            submit.movieMediaQuality = mediaQuality;
-            await submitRequest(item, requestButton, note);
-        };
-    }
-
-    async function submitRequest(item, requestButton, note) {
-        item = normalizeResult(item);
-        if (!item.name.trim()) {
-            status.className = "requests-status error";
-            status.textContent = "This result is missing its title metadata.";
-            return;
+    function cardState(item) {
+        if (field(item, "inLibrary")) {
+            return { inLibrary: true, text: "In library", icon: "check", indicatorClass: "playedIndicator", statusClass: "" };
         }
+        const status = state.requested.get(mediaKey(item));
+        if (status) {
+            return { inLibrary: false, text: statusLabel(status), icon: "how_to_vote", indicatorClass: "requestsIndicator", statusClass: statusClass(status) };
+        }
+        return null;
+    }
 
-        requestButton.disabled = true;
-        requestButton.textContent = "Requesting...";
-
-        try {
-            await apiRequest("/Requests", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    mediaId: item.providerId || "",
-                    title: item.name || "",
-                    mediaType: mediaLabel(item.mediaType),
-                    overview: item.overview || "",
-                    posterUrl: item.posterUrl || "",
-                    providerId: item.providerId || "",
-                    providerIds: item.providerIds || {},
-                    productionYear: item.productionYear || null,
-                    sourceProvider: item.sourceProvider || "",
-                    mediaCategory: "Movies",
-                    requestScope: "EntireMovie",
-                    requestKind: "Movie",
-                    requestedSeasonNumbers: [],
-                    requestedEpisodeIds: [],
-                    requestedEpisodeNames: [],
-                    note: note || "",
-                    mediaQuality: page.querySelector("#requestsMovieQuality").value || ""
-                })
-            });
-
-            requestedKeys.add(mediaKey(item));
-            requestButton.textContent = "✓ Requested";
-            requestButton.classList.add("requested");
-            requestButton.disabled = true;
-            closeMovieModal();
-            loadMyRequests();
-        } catch (error) {
-            requestButton.disabled = false;
-            requestButton.textContent = "Request";
-            status.className = "requests-status error";
-            status.textContent = error.message || "Unable to submit the request.";
+    function updateCard(card, item) {
+        const indicators = card.querySelector(".cardIndicators");
+        const stateLine = card.querySelector(".requestsCard-state");
+        const current = cardState(item);
+        indicators.replaceChildren();
+        stateLine.textContent = current ? current.text : " ";
+        stateLine.className = "cardText cardTextCentered cardText-secondary requestsCard-state"
+            + (current && current.statusClass ? " " + current.statusClass : "");
+        if (current) {
+            const indicator = document.createElement("div");
+            indicator.className = `indicator ${current.indicatorClass}`;
+            indicator.title = current.text;
+            indicator.append(icon(current.icon, "indicatorIcon"));
+            indicators.append(indicator);
         }
     }
 
-    function renderResult(item) {
-        const card = document.createElement("article");
-        card.className = "requests-card";
-
-        const poster = createPoster(item);
-        const body = document.createElement("div");
-        body.className = "requests-card-body";
-
-        const year = releaseYear(item);
-        const heading = document.createElement("h2");
-        heading.className = "requests-card-heading";
-        heading.textContent = year ? `${item.name || "Untitled"} (${year})` : item.name || "Untitled";
-
-        const meta = document.createElement("div");
-        meta.className = "requests-card-meta";
-        meta.textContent = [
-            mediaLabel(item.mediaType),
-            item.sourceProvider ? `Source: ${item.sourceProvider}` : ""
-        ].filter(Boolean).join(" · ");
-
-        const overview = document.createElement("p");
-        overview.className = "requests-card-overview";
-        overview.textContent = item.overview || "No overview available.";
-
-        const requestButton = document.createElement("button");
-        requestButton.type = "button";
-        requestButton.className = "raised button-submit emby-button requests-card-button";
-
-        if (requestedKeys.has(mediaKey(item))) {
-            requestButton.textContent = "✓ Requested";
-            requestButton.disabled = true;
-            requestButton.classList.add("requested");
-        } else {
-            requestButton.textContent = "Request";
-            requestButton.addEventListener("click", function () {
-                if (String(item.mediaType || "").toLowerCase() === "tv"
-                    || String(item.mediaCategory || "").toLowerCase() === "tvshows") {
-                    openTvModal(item, requestButton);
-                } else {
-                    openMovieModal(item, requestButton);
-                }
-            });
-        }
-
-        const libraryQuery = new URLSearchParams();
-        Object.values(item.providerIds || {}).forEach(function (providerId) {
-            if (providerId) {
-                libraryQuery.append("providerIds", providerId);
+    function refreshCardStates() {
+        el.results.querySelectorAll(".requestsCard").forEach(function (card) {
+            const item = state.results[Number(card.dataset.index)];
+            if (item) {
+                updateCard(card, item);
             }
         });
-        if (item.providerId) {
-            libraryQuery.append("providerId", item.providerId);
-        }
-        apiRequest(`/Requests/library-status?${libraryQuery.toString()}`, { method: "GET" })
-            .then(function (libraryStatus) {
-                if (libraryStatus && libraryStatus.inLibrary) {
-                    requestButton.textContent = "In Library";
-                    requestButton.disabled = true;
-                    requestButton.classList.add("in-library");
-                }
-            })
-            .catch(function () {
-                // Search remains usable if library availability cannot be loaded.
-            });
+    }
 
-        body.append(heading, meta, overview, requestButton);
-        card.append(poster, body);
+    function renderCard(item, index) {
+        const card = document.createElement("button");
+        card.type = "button";
+        card.className = "card portraitCard card-hoverable requestsCard";
+        card.dataset.index = String(index);
+        const year = field(item, "productionYear");
+        card.setAttribute("aria-label", `${field(item, "name")}${year ? ` (${year})` : ""}`);
+
+        const box = document.createElement("div");
+        box.className = "cardBox cardBox-bottompadded";
+
+        const scalable = document.createElement("div");
+        scalable.className = "cardScalable";
+        const padder = document.createElement("div");
+        padder.className = "cardPadder cardPadder-portrait";
+        const image = document.createElement("div");
+        const poster = field(item, "posterUrl");
+        if (poster) {
+            image.className = "cardImageContainer coveredImage cardContent";
+            image.style.backgroundImage = cssUrl(poster);
+        } else {
+            image.className = `cardImageContainer coveredImage cardContent defaultCardBackground defaultCardBackground${(index % 5) + 1}`;
+            image.append(icon(isTv(item) ? "tv" : "movie", "cardImageIcon"));
+        }
+        const indicators = document.createElement("div");
+        indicators.className = "cardIndicators";
+        scalable.append(padder, image, indicators);
+
+        const name = document.createElement("div");
+        name.className = "cardText cardTextCentered cardText-first";
+        const bdi = document.createElement("bdi");
+        bdi.textContent = field(item, "name") || "Untitled";
+        name.append(bdi);
+
+        const secondary = document.createElement("div");
+        secondary.className = "cardText cardTextCentered cardText-secondary";
+        secondary.textContent = [year, isTv(item) ? "TV Show" : "Movie"].filter(Boolean).join(" · ");
+
+        const stateLine = document.createElement("div");
+        stateLine.className = "cardText cardTextCentered cardText-secondary requestsCard-state";
+
+        box.append(scalable, name, secondary, stateLine);
+        card.append(box);
+        updateCard(card, item);
         return card;
     }
 
     async function search(query) {
-        status.className = "requests-status";
-        status.textContent = "Searching...";
-        results.replaceChildren();
-        button.disabled = true;
-        input.disabled = true;
+        if (state.searchController) {
+            state.searchController.abort();
+        }
+        const controller = new AbortController();
+        state.searchController = controller;
+
+        setMessage(el.status, "Searching...");
+        el.searchButton.disabled = true;
 
         try {
-            await loadExistingRequests();
-            const encodedQuery = encodeURIComponent(query);
-            const mediaType = encodeURIComponent(mediaTypeSelect.value);
-            const combined = await apiRequest(`/Requests/Search?query=${encodedQuery}&mediaType=${mediaType}`, { method: "GET" });
+            const type = el.typeContainer.hidden ? (el.type.value || "All") : el.type.value;
+            const results = await api(
+                `Requests/Search?query=${encodeURIComponent(query)}&mediaType=${encodeURIComponent(type || "All")}`,
+                { signal: controller.signal });
+            state.results = Array.isArray(results) ? results : [];
 
-            if (combined.length === 0) {
-                status.textContent = "No results found.";
+            const fragment = document.createDocumentFragment();
+            state.results.forEach((item, index) => fragment.append(renderCard(item, index)));
+            el.results.replaceChildren(fragment);
+            setMessage(el.status, state.results.length
+                ? `${state.results.length} result${state.results.length === 1 ? "" : "s"}`
+                : `No results found for "${query}".`);
+        } catch (error) {
+            if (error.name === "AbortError") {
                 return;
             }
-
-            status.textContent = `${combined.length} result${combined.length === 1 ? "" : "s"}`;
-            combined.forEach(function (item) {
-                results.append(createResultFragment(normalizeResult(item)));
-            });
-        } catch (error) {
-            status.className = "requests-status error";
-            status.textContent = error.message || "Unable to search Jellyfin metadata providers.";
+            el.results.replaceChildren();
+            setMessage(el.status, error.message || "Search failed.", true);
         } finally {
-            button.disabled = false;
-            input.disabled = false;
+            if (state.searchController === controller) {
+                state.searchController = null;
+                el.searchButton.disabled = false;
+            }
         }
     }
 
-    function createResultFragment(item) {
-        return renderResult(item);
+    // ---------- request dialog ----------
+
+    function buildSeasonList() {
+        if (el.seasonList.childElementCount) {
+            el.seasonList.querySelectorAll("input").forEach((box) => { box.checked = false; });
+            return;
+        }
+        const fragment = document.createDocumentFragment();
+        for (let season = 1; season <= MAX_SEASONS; season++) {
+            const label = document.createElement("label");
+            label.className = "requestsChoice";
+            const box = document.createElement("input");
+            box.type = "checkbox";
+            box.value = String(season);
+            const text = document.createElement("span");
+            text.textContent = `Season ${season}`;
+            label.append(box, text);
+            fragment.append(label);
+        }
+        el.seasonList.append(fragment);
     }
 
-    form.addEventListener("submit", function (event) {
+    function selectedScope() {
+        const checked = dialog.querySelector('input[name="requestsTvScope"]:checked');
+        return checked ? checked.value : "EntireSeries";
+    }
+
+    function syncScopeVisibility() {
+        const scope = selectedScope();
+        el.seasonList.hidden = scope !== "SeasonSelection";
+        el.episodeList.hidden = scope !== "EpisodeSelection";
+    }
+
+    function openDialog(item, trigger) {
+        state.dialogItem = item;
+        state.lastFocus = trigger || document.activeElement;
+        const tv = isTv(item);
+        const year = field(item, "productionYear");
+        const current = cardState(item);
+
+        el.dialogTitle.textContent = (field(item, "name") || "Request") + (year ? ` (${year})` : "");
+        el.dialogMeta.textContent = [tv ? "TV Show" : "Movie", field(item, "sourceProvider")].filter(Boolean).join(" · ");
+        el.dialogOverview.textContent = field(item, "overview") || "No overview available.";
+
+        const poster = field(item, "posterUrl");
+        el.dialogPoster.style.backgroundImage = poster ? cssUrl(poster) : "";
+        el.dialogPoster.classList.toggle("defaultCardBackground", !poster);
+
+        el.tvScope.hidden = !tv;
+        if (tv) {
+            dialog.querySelector('input[name="requestsTvScope"][value="EntireSeries"]').checked = true;
+            buildSeasonList();
+            el.episodeIds.value = "";
+            syncScopeVisibility();
+        }
+
+        fillSelect(el.quality, state.quality);
+        el.note.value = "";
+
+        // Movies: one request, and nothing to request once it's in the library.
+        // TV shows: still allow requests for missing seasons/episodes.
+        let blocked = "";
+        let note = "";
+        if (current && !tv) {
+            blocked = current.inLibrary ? "This movie is already in the library." : `You already requested this movie (${current.text}).`;
+        } else if (current && tv) {
+            note = current.inLibrary
+                ? "This show is already in the library. You can still request missing seasons or episodes."
+                : `You already have a request for this show (${current.text}). You can still request other seasons or episodes.`;
+        }
+        setMessage(el.dialogMessage, blocked || note);
+        el.submit.disabled = Boolean(blocked);
+        setButtonText(el.submit, "Submit Request");
+
+        dialog.hidden = false;
+        (tv ? dialog.querySelector('input[name="requestsTvScope"]:checked') : el.quality).focus();
+    }
+
+    function closeDialog() {
+        if (dialog.hidden) {
+            return;
+        }
+        dialog.hidden = true;
+        state.dialogItem = null;
+        if (state.lastFocus && typeof state.lastFocus.focus === "function" && state.lastFocus.isConnected) {
+            state.lastFocus.focus();
+        }
+    }
+
+    function buildPayload(item) {
+        const tv = isTv(item);
+        const scope = tv ? selectedScope() : "EntireMovie";
+        const seasons = scope === "SeasonSelection"
+            ? Array.from(el.seasonList.querySelectorAll("input:checked")).map((box) => Number(box.value))
+            : [];
+        const episodes = scope === "EpisodeSelection"
+            ? el.episodeIds.value.split(",").map((value) => value.trim().toUpperCase()).filter(Boolean)
+            : [];
+
+        if (scope === "SeasonSelection" && seasons.length === 0) {
+            throw new Error("Select at least one season.");
+        }
+        if (scope === "EpisodeSelection") {
+            if (episodes.length === 0) {
+                throw new Error("Enter at least one episode, e.g. S01E01.");
+            }
+            const invalid = episodes.filter((value) => !EPISODE_PATTERN.test(value));
+            if (invalid.length) {
+                throw new Error(`Use the SxxEyy format for episodes: ${invalid.join(", ")}`);
+            }
+        }
+
+        return {
+            mediaId: field(item, "providerId") || "",
+            title: field(item, "name") || "",
+            mediaType: tv ? "TV Show" : "Movie",
+            overview: field(item, "overview") || "",
+            posterUrl: field(item, "posterUrl") || "",
+            providerId: field(item, "providerId") || "",
+            providerIds: field(item, "providerIds") || {},
+            productionYear: field(item, "productionYear") || null,
+            sourceProvider: field(item, "sourceProvider") || "",
+            mediaCategory: tv ? "TVShows" : "Movies",
+            requestScope: scope,
+            requestKind: !tv ? "Movie" : scope === "SeasonSelection" ? "Season" : scope === "EpisodeSelection" ? "Episode" : "Series",
+            requestedSeasonNumbers: seasons,
+            requestedEpisodeIds: episodes,
+            requestedEpisodeNames: episodes,
+            note: el.note.value.trim(),
+            mediaQuality: el.quality.value || ""
+        };
+    }
+
+    async function submitRequest() {
+        const item = state.dialogItem;
+        if (!item || state.submitting) {
+            return;
+        }
+
+        let payload;
+        try {
+            payload = buildPayload(item);
+        } catch (error) {
+            setMessage(el.dialogMessage, error.message, true);
+            return;
+        }
+
+        state.submitting = true;
+        el.submit.disabled = true;
+        setButtonText(el.submit, "Submitting...");
+        try {
+            await api("Requests", { method: "POST", body: payload });
+            closeDialog();
+            setMessage(el.status, `Requested ${payload.title}.`);
+            await loadMyRequests();
+        } catch (error) {
+            setMessage(el.dialogMessage, error.status === 409
+                ? "You (or someone else) already requested this."
+                : error.message || "Unable to submit the request.", true);
+            el.submit.disabled = false;
+        } finally {
+            state.submitting = false;
+            setButtonText(el.submit, "Submit Request");
+        }
+    }
+
+    // ---------- wiring ----------
+
+    el.form.addEventListener("submit", function (event) {
         event.preventDefault();
-        const query = input.value.trim();
-        if (!query) {
-            status.className = "requests-status error";
-            status.textContent = "Enter a title to search.";
-            return;
+        const query = el.input.value.trim();
+        if (query) {
+            search(query);
+        } else {
+            setMessage(el.status, "Enter a title to search.", true);
         }
-        search(query);
     });
 
-    page.querySelectorAll('input[name="requestsTvScope"]').forEach(function (radio) {
-        radio.addEventListener("change", function () {
-            const seasonList = page.querySelector("#requestsSeasonList");
-            const episodeList = page.querySelector("#requestsEpisodeList");
-            seasonList.hidden = radio.value !== "SeasonSelection";
-            episodeList.hidden = radio.value !== "EpisodeSelection";
-        });
+    // One delegated listener for every result card.
+    el.results.addEventListener("click", function (event) {
+        const card = event.target instanceof Element ? event.target.closest(".requestsCard") : null;
+        const item = card && state.results[Number(card.dataset.index)];
+        if (item) {
+            openDialog(item, card);
+        }
     });
-    page.querySelector("#requestsTvCancel").addEventListener("click", closeTvModal);
-    page.querySelector(".requests-modal-backdrop").addEventListener("click", closeTvModal);
-    page.querySelector("#requestsMovieCancel").addEventListener("click", closeMovieModal);
-    page.querySelector("#requestsMovieModal .requests-modal-backdrop").addEventListener("click", closeMovieModal);
+
+    dialog.addEventListener("click", function (event) {
+        if (event.target instanceof Element && event.target.closest("[data-dialog-close]")) {
+            closeDialog();
+        }
+    });
+    dialog.addEventListener("change", function (event) {
+        if (event.target.name === "requestsTvScope") {
+            syncScopeVisibility();
+        }
+    });
+    el.submit.addEventListener("click", submitRequest);
+
     document.addEventListener("keydown", function (event) {
-        if (event.key !== "Escape") {
-            return;
+        if (event.key === "Escape" && !dialog.hidden) {
+            event.stopPropagation();
+            closeDialog();
         }
-        if (!page.querySelector("#requestsTvModal").hidden) {
-            closeTvModal();
-        } else if (!page.querySelector("#requestsMovieModal").hidden) {
-            closeMovieModal();
-        }
-    });
+    }, true);
 
-    // Fired by the header navigation every time the Requests view is opened,
-    // so settings changed by an administrator and request statuses stay fresh.
-    let firstShow = true;
-    page.addEventListener("requestsshow", function () {
-        if (firstShow) {
-            firstShow = false;
-            return;
+    let lastRefresh = 0;
+    function show() {
+        // Cheap refresh so admin setting changes and status updates show up when reopening.
+        const now = Date.now();
+        if (now - lastRefresh > 5000) {
+            lastRefresh = now;
+            loadSettings();
+            loadMyRequests();
         }
-        loadQualityOptions();
-        loadMediaOptions();
-        loadMyRequests();
-    });
+        if (!el.input.value) {
+            el.input.focus({ preventScroll: true });
+        }
+    }
 
-    loadQualityOptions();
-    loadMediaOptions();
-    loadMyRequests();
-})();
+    window.RequestsPage = {
+        show: show,
+        hide: closeDialog,
+        hasOpenDialog: () => !dialog.hidden
+    };
+}());

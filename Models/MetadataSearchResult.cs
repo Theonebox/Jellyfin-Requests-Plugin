@@ -28,5 +28,10 @@ public sealed class MetadataSearchResult
     [JsonPropertyName("providerIds")]
     public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
+    [JsonPropertyName("mediaCategory")]
     public MediaCategory MediaCategory { get; set; } = MediaCategory.Movies;
+
+    /// <summary>True when a movie/series with one of these provider IDs already exists in the library.</summary>
+    [JsonPropertyName("inLibrary")]
+    public bool InLibrary { get; set; }
 }

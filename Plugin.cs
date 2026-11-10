@@ -5,6 +5,7 @@ using MediaBrowser.Model.Serialization;
 using Jellyfin.Plugin.Requests.Services;
 using MediaBrowser.Controller.Providers;
 using MediaBrowser.Controller.Library;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.Requests;
 
@@ -19,16 +20,31 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         IApplicationPaths applicationPaths,
         IXmlSerializer xmlSerializer,
         IProviderManager providerManager,
-        ILibraryManager libraryManager)
+        ILibraryManager libraryManager,
+        ILogger<Plugin> logger)
         : base(applicationPaths, xmlSerializer)
     {
         Instance = this;
+        _applicationPaths = applicationPaths;
+        _logger = logger;
         Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
         MetadataIdentify = new MetadataIdentifyService(providerManager);
         // The availability cache is filled by the "Requests: Detect library media" scheduled
         // task (startup + daily) and kept current through library events. Scanning the whole
         // library here would block plugin construction during server start-up.
         LibraryAvailability = new LibraryAvailabilityService(libraryManager);
+
+        // Make the header button available even where the response middleware can't run.
+        WebClientInjector.PatchIndexFile(applicationPaths.WebPath, logger);
+    }
+
+    private readonly IApplicationPaths _applicationPaths;
+    private readonly ILogger<Plugin> _logger;
+
+    public override void OnUninstalling()
+    {
+        WebClientInjector.UnpatchIndexFile(_applicationPaths.WebPath, _logger);
+        base.OnUninstalling();
     }
 
     public override string Name => "Requests";

@@ -61,18 +61,10 @@ public sealed class NavigationStartupFilter : IStartupFilter
 
             using var reader = new StreamReader(buffer, Encoding.UTF8, leaveOpen: true);
             var html = await reader.ReadToEndAsync().ConfigureAwait(false);
-            if (!html.Contains("requests-header-button", StringComparison.Ordinal))
+            html = WebClientInjector.Inject(html, out _);
+            if (!html.Contains("data-requests-plugin", StringComparison.Ordinal))
             {
-                var script = ReadNavigationScript();
-                var bodyClose = html.LastIndexOf("</body>", StringComparison.OrdinalIgnoreCase);
-                if (bodyClose >= 0)
-                {
-                    html = html.Insert(bodyClose, $"<script>{script}</script>");
-                }
-                else
-                {
-                    _logger.LogWarning("Requests: could not find </body> in the web client index; the header button was not injected.");
-                }
+                _logger.LogWarning("Requests: could not find </body> in the web client index; the header button was not injected.");
             }
 
             var bytes = Encoding.UTF8.GetBytes(html);
@@ -80,6 +72,8 @@ public sealed class NavigationStartupFilter : IStartupFilter
             context.Response.ContentLength = bytes.Length;
             context.Response.Headers.Remove("ETag");
             context.Response.Headers.Remove("Last-Modified");
+            // Make browsers re-fetch index.html so the injected tag can't go stale.
+            context.Response.Headers.CacheControl = "no-cache";
             await originalBody.WriteAsync(bytes).ConfigureAwait(false);
         }
         catch
@@ -87,15 +81,6 @@ public sealed class NavigationStartupFilter : IStartupFilter
             context.Response.Body = originalBody;
             throw;
         }
-    }
-
-    private static string ReadNavigationScript()
-    {
-        using var stream = typeof(NavigationStartupFilter).Assembly.GetManifestResourceStream(
-            $"{typeof(Plugin).Namespace}.Navigation.Requests-navigation.js")
-            ?? throw new InvalidOperationException("The Requests navigation script resource is missing.");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
     }
 
     private static bool IsWebIndex(string? path)

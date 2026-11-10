@@ -1,76 +1,96 @@
-<div id="requestsPage" data-role="page" class="page type-interior requestsPage">
-    <div class="requests-content">
-        <h1 class="sectionTitle">Requests</h1>
-
-        <form id="requestsSearchForm" class="requests-search" autocomplete="off">
-            <label for="requestsSearchInput" class="fieldDescription">Search Movies and TV Shows</label>
-            <div class="requests-search-row">
-                <input
-                    id="requestsSearchInput"
-                    class="requests-search-input"
-                    type="search"
-                    placeholder="Search Movies and TV Shows"
-                    required
-                    is="emby-input">
-                <select id="requestsMediaType" class="requests-media-type" is="emby-select" aria-label="Media type">
-                    <option value="Movies">Movies</option>
-                    <option value="TV Shows">TV Shows</option>
-                    <option value="All">All</option>
-                </select>
-                <button id="requestsSearchButton" class="raised button-submit emby-button requests-search-button" type="submit">
-                    Search
-                </button>
+<div id="requestsPage" class="requestsPage padded-left padded-right padded-bottom-page">
+    <div class="requestsPage-content">
+        <div class="verticalSection">
+            <div class="sectionTitleContainer flex align-items-center">
+                <h2 class="sectionTitle">Requests</h2>
             </div>
-        </form>
 
-        <div id="requestsStatus" class="requests-status" role="status" aria-live="polite"></div>
-        <div id="requestsResults" class="requests-results"></div>
+            <form id="requestsSearchForm" class="requestsSearch" autocomplete="off" role="search">
+                <div class="inputContainer requestsSearch-query">
+                    <label class="inputLabel inputLabelUnfocused" for="requestsSearchInput">Search movies and TV shows</label>
+                    <input id="requestsSearchInput" class="emby-input" type="search" enterkeyhint="search" maxlength="200" required>
+                </div>
+                <div class="selectContainer requestsSearch-type">
+                    <label class="selectLabel" for="requestsMediaType">Type</label>
+                    <select id="requestsMediaType" class="emby-select-withcolor emby-select">
+                        <option value="All">All</option>
+                        <option value="Movies">Movies</option>
+                        <option value="TV Shows">TV Shows</option>
+                    </select>
+                    <div class="selectArrowContainer"><span class="selectArrow material-icons keyboard_arrow_down" aria-hidden="true"></span></div>
+                </div>
+                <button id="requestsSearchButton" type="submit" class="raised button-submit emby-button requestsSearch-button">
+                    <span>Search</span>
+                </button>
+            </form>
 
-        <section class="requests-my-section">
-            <h2>My Requests</h2>
-            <div id="requestsMyStatus" class="requests-status" role="status"></div>
-            <div id="requestsMyList" class="requests-my-list"></div>
-        </section>
+            <div id="requestsStatus" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
+            <div id="requestsResults" class="itemsContainer vertical-wrap requestsResults"></div>
+        </div>
+
+        <div class="verticalSection requestsMine">
+            <div class="sectionTitleContainer flex align-items-center">
+                <h2 class="sectionTitle">My Requests</h2>
+            </div>
+            <div id="requestsMyStatus" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
+            <div id="requestsMyList" class="paperList requestsMine-list"></div>
+        </div>
     </div>
 
-    <div id="requestsTvModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsTvModalTitle">
-        <div class="requests-modal-backdrop"></div>
-        <div class="requests-modal-panel">
-            <h2 id="requestsTvModalTitle">Request TV Show</h2>
-            <div class="requests-modal-options">
-                <label><input type="radio" name="requestsTvScope" value="EntireSeries" checked> Entire Series</label>
-                <label><input type="radio" name="requestsTvScope" value="SeasonSelection"> Specific Seasons</label>
-                <div id="requestsSeasonList" class="requests-season-list" hidden></div>
-                <label><input type="radio" name="requestsTvScope" value="EpisodeSelection"> Specific Episodes</label>
-                <div id="requestsEpisodeList" class="requests-episode-list" hidden>
-                    <label for="requestsEpisodeIds">Episode IDs or codes</label>
-                    <input id="requestsEpisodeIds" type="text" is="emby-input" placeholder="S01E01, S01E02">
+    <!-- Request dialog (moved to <body> at runtime so it layers above the header). -->
+    <div id="requestsDialog" class="requestsDialogContainer" hidden>
+        <div class="requestsDialogBackdrop" data-dialog-close></div>
+        <div class="focuscontainer dialog formDialog requestsDialog" role="dialog" aria-modal="true" aria-labelledby="requestsDialogTitle">
+            <div class="formDialogHeader">
+                <button type="button" class="paper-icon-button-light btnCancel autoSize" data-dialog-close title="Close" aria-label="Close">
+                    <span class="material-icons close" aria-hidden="true"></span>
+                </button>
+                <h3 id="requestsDialogTitle" class="formDialogHeaderTitle">Request</h3>
+            </div>
+
+            <div class="formDialogContent smoothScrollY">
+                <div class="dialogContentInner dialog-content-centered requestsDialog-body">
+                    <div class="requestsDialog-summary">
+                        <div id="requestsDialogPoster" class="requestsDialog-poster cardImageContainer coveredImage defaultCardBackground"></div>
+                        <div class="requestsDialog-info">
+                            <div id="requestsDialogMeta" class="secondaryText requestsDialog-meta"></div>
+                            <p id="requestsDialogOverview" class="requestsDialog-overview"></p>
+                        </div>
+                    </div>
+
+                    <fieldset id="requestsTvScope" class="requestsFieldset" hidden>
+                        <legend class="requestsFieldset-legend">What would you like?</legend>
+                        <label class="requestsChoice"><input type="radio" name="requestsTvScope" value="EntireSeries" checked><span>Entire series</span></label>
+                        <label class="requestsChoice"><input type="radio" name="requestsTvScope" value="SeasonSelection"><span>Specific seasons</span></label>
+                        <div id="requestsSeasonList" class="requestsSeasons" hidden></div>
+                        <label class="requestsChoice"><input type="radio" name="requestsTvScope" value="EpisodeSelection"><span>Specific episodes</span></label>
+                        <div id="requestsEpisodeList" class="inputContainer requestsEpisodes" hidden>
+                            <label class="inputLabel" for="requestsEpisodeIds">Episodes</label>
+                            <input id="requestsEpisodeIds" class="emby-input" type="text" placeholder="S01E01, S01E02">
+                            <div class="fieldDescription">Comma-separated, e.g. S01E01, S02E05.</div>
+                        </div>
+                    </fieldset>
+
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="requestsQuality">Quality</label>
+                        <select id="requestsQuality" class="emby-select-withcolor emby-select"></select>
+                        <div class="selectArrowContainer"><span class="selectArrow material-icons keyboard_arrow_down" aria-hidden="true"></span></div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="requestsNote">Note (optional)</label>
+                        <textarea id="requestsNote" class="emby-textarea" rows="3" maxlength="1000"></textarea>
+                    </div>
+
+                    <div id="requestsDialogMessage" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
                 </div>
             </div>
-            <label for="requestsTvQuality">Media quality</label>
-            <select id="requestsTvQuality" class="requests-quality-select" is="emby-select" aria-label="Media quality"></select>
-            <label for="requestsTvNote">Optional note</label>
-            <textarea id="requestsTvNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
-            <div class="requests-modal-actions">
-                <button id="requestsTvCancel" type="button" class="raised emby-button">Cancel</button>
-                <button id="requestsTvSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
+
+            <div class="formDialogFooter">
+                <button id="requestsDialogSubmit" type="button" class="raised button-submit block btnSubmit formDialogFooterItem emby-button">
+                    <span>Submit Request</span>
+                </button>
             </div>
         </div>
     </div>
-
-    <div id="requestsMovieModal" class="requests-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsMovieModalTitle">
-        <div class="requests-modal-backdrop"></div>
-        <div class="requests-modal-panel">
-            <h2 id="requestsMovieModalTitle">Request Movie</h2>
-            <label for="requestsMovieQuality">Media quality</label>
-            <select id="requestsMovieQuality" class="requests-quality-select" is="emby-select" aria-label="Media quality"></select>
-            <label for="requestsMovieNote">Optional note</label>
-            <textarea id="requestsMovieNote" class="requests-note" rows="3" placeholder="I would love to watch this."></textarea>
-            <div class="requests-modal-actions">
-                <button id="requestsMovieCancel" type="button" class="raised emby-button">Cancel</button>
-                <button id="requestsMovieSubmit" type="button" class="raised button-submit emby-button">Submit Request</button>
-            </div>
-        </div>
-    </div>
-
 </div>
