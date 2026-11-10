@@ -59,53 +59,81 @@
             + `#${VIEW_ID}[hidden] { display: none !important; }`
             + `#${VIEW_ID} { position: fixed; left: 0; right: 0; bottom: 0; overflow-y: auto;`
             + ` overscroll-behavior: contain; z-index: 2; -webkit-overflow-scrolling: touch; }`
-            + `.MuiToolbar-root #${BUTTON_ID} { background: transparent; border: 0; color: inherit;`
-            + ` cursor: pointer; padding: 8px; border-radius: 50%; display: inline-flex; }`;
+            + `#${BUTTON_ID}.requestsHeaderButton-active { opacity: 1; }`
+            + `#${BUTTON_ID}.MuiIconButton-root.requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2); }`;
         document.head.append(style);
     }
 
     // ---------- header button ----------
 
-    // Returns { parent, before } describing where the button goes.
+    // Material "how_to_vote" icon, used in the React header which draws its icons as inline SVG.
+    const HOW_TO_VOTE_PATH = "M18 13h-.68l-2 2h1.91L19 17H5l1.78-2h2.05l-2-2H6l-3 3v4c0 1.1.89 2 1.99 2H19c1.1 0 2-.89 2-2v-4l-3-3zm-1-5.05l-4.95 4.95-3.54-3.54 4.95-4.95L17 7.95zm-4.24-5.66L6.39 8.66c-.39.39-.39 1.02 0 1.41l4.95 4.95c.39.39 1.02.39 1.41 0l6.36-6.36c.39-.39.39-1.02 0-1.41L14.16 2.3c-.38-.4-1.01-.4-1.4-.01z";
+
+    function isVisible(element) {
+        return Boolean(element && element.getClientRects().length);
+    }
+
+    // Jellyfin has two header implementations and both can exist in the DOM at once (the unused
+    // one is hidden): the classic .skinHeader and the React/MUI .MuiAppBar-root (the
+    // "experimental" layout, also used by Jellyfin Enhanced). Only the visible one counts.
+    // Returns { layout, parent, before, template } describing where the button goes.
     function findInsertionPoint() {
-        // Classic layout: <div class="headerRight"> ... <button class="headerSyncButton"> ...
-        const sync = document.querySelector(".skinHeader .headerSyncButton");
-        if (sync && sync.parentElement) {
-            return { parent: sync.parentElement, before: sync };
+        const appBar = document.querySelector(".MuiAppBar-root");
+        if (isVisible(appBar)) {
+            const sync = appBar.querySelector('button[aria-label="SyncPlay"], button[title="SyncPlay"]');
+            if (sync && sync.parentElement) {
+                return { layout: "mui", parent: sync.parentElement, before: sync, template: sync };
+            }
+            const iconButtons = Array.from(appBar.querySelectorAll(".MuiIconButton-root"))
+                .filter((button) => button.id !== BUTTON_ID && button.getAttribute("aria-controls") !== "app-user-menu" && isVisible(button));
+            if (iconButtons.length) {
+                return { layout: "mui", parent: iconButtons[0].parentElement, before: iconButtons[0], template: iconButtons[0] };
+            }
+            const toolbar = appBar.querySelector(".MuiToolbar-root");
+            return toolbar ? { layout: "mui", parent: toolbar, before: null, template: null } : null;
         }
 
-        const headerRight = document.querySelector(".skinHeader .headerRight");
-        if (headerRight) {
-            const cast = headerRight.querySelector(".headerCastButton");
-            return { parent: headerRight, before: cast || headerRight.firstChild };
-        }
-
-        // Experimental (React/MUI) layout.
-        const muiSync = document.querySelector('.MuiAppBar-root [title="SyncPlay"], .MuiAppBar-root [aria-label="SyncPlay"]');
-        if (muiSync) {
-            const target = muiSync.closest("button") || muiSync;
-            return { parent: target.parentElement, before: target };
-        }
-
-        const userMenu = document.querySelector('.MuiAppBar-root [aria-controls="app-user-menu"]');
-        if (userMenu) {
-            const target = userMenu.closest("button") || userMenu;
-            return { parent: target.parentElement, before: target };
+        const skinHeader = document.querySelector(".skinHeader");
+        if (isVisible(skinHeader)) {
+            const headerRight = skinHeader.querySelector(".headerRight");
+            if (!headerRight) {
+                return null;
+            }
+            // SyncPlay may be hidden (class "hide") when the user lacks SyncPlay access;
+            // the button still goes in that slot.
+            const before = headerRight.querySelector(".headerSyncButton")
+                || headerRight.querySelector(".headerCastButton")
+                || headerRight.firstChild;
+            return { layout: "classic", parent: headerRight, before: before, template: null };
         }
 
         return null;
     }
 
-    function createButton() {
+    function createButton(point) {
         const button = document.createElement("button");
         button.id = BUTTON_ID;
         button.type = "button";
-        button.setAttribute("is", "paper-icon-button-light");
-        button.className = "headerButton headerButtonRight paper-icon-button-light requestsHeaderButton";
         button.title = "Requests";
+        button.dataset.layout = point.layout;
         button.setAttribute("aria-label", "Requests");
-        // Same markup Jellyfin uses for its own header icons (class-based Material icon).
-        button.innerHTML = '<span class="material-icons how_to_vote" aria-hidden="true"></span>';
+
+        if (point.layout === "mui") {
+            // Copy the neighbouring React icon button's classes so it looks identical (size,
+            // hover ripple area, colour) under any theme.
+            const svgClass = point.template && point.template.querySelector("svg")
+                ? point.template.querySelector("svg").getAttribute("class")
+                : "MuiSvgIcon-root MuiSvgIcon-fontSizeMedium";
+            button.className = (point.template ? point.template.className.replace(/\bMui-focusVisible\b/g, "") : "MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInherit MuiIconButton-sizeLarge")
+                + " requestsHeaderButton";
+            button.innerHTML = `<svg class="${svgClass}" focusable="false" aria-hidden="true" viewBox="0 0 24 24"><path d="${HOW_TO_VOTE_PATH}"></path></svg>`;
+        } else {
+            button.setAttribute("is", "paper-icon-button-light");
+            button.className = "headerButton headerButtonRight paper-icon-button-light requestsHeaderButton";
+            // Same markup Jellyfin uses for its own classic header icons.
+            button.innerHTML = '<span class="material-icons how_to_vote" aria-hidden="true"></span>';
+        }
+
         button.addEventListener("click", function (event) {
             event.preventDefault();
             event.stopPropagation();
@@ -131,8 +159,13 @@
             return;
         }
 
+        if (button && button.dataset.layout !== point.layout) {
+            button.remove(); // Layout switched; rebuild with the right look.
+            button = null;
+        }
+
         if (!button) {
-            button = createButton();
+            button = createButton(point);
         } else if (button.parentElement === point.parent && button.nextSibling === point.before) {
             return; // Already in place.
         }
@@ -150,7 +183,7 @@
     // ---------- Requests view ----------
 
     function headerBottom() {
-        const header = document.querySelector(".skinHeader") || document.querySelector(".MuiAppBar-root");
+        const header = [document.querySelector(".MuiAppBar-root"), document.querySelector(".skinHeader")].find(isVisible);
         return header ? Math.max(0, Math.round(header.getBoundingClientRect().bottom)) : 0;
     }
 
