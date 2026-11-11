@@ -18,9 +18,38 @@ public sealed partial class ConfigurationController : ControllerBase
 {
     private static PluginConfiguration? Configuration => Plugin.Instance?.Configuration;
 
-    [HttpGet("QualityOptions")]
-    public ActionResult<object> GetQualityOptions()
-        => Ok(new { options = Clean(Configuration?.MediaQualityOptions) is { Length: > 0 } options ? options : PluginConfiguration.DefaultQualityOptions });
+    /// <summary>
+    /// Everything the Requests page and settings page need, in one call: quality options, enabled
+    /// media types, statuses and the animations switch.
+    /// </summary>
+    [HttpGet("Client")]
+    public ActionResult<object> GetClientSettings()
+    {
+        var configuration = Configuration;
+        return Ok(new
+        {
+            qualityOptions = QualityOptions(),
+            movies = configuration?.EnableMovies ?? true,
+            tvShows = configuration?.EnableTvShows ?? true,
+            statusOptions = configuration?.GetStatusOptions() ?? PluginConfiguration.DefaultStatusOptions(),
+            animations = configuration?.EnableAnimations ?? true
+        });
+    }
+
+    [HttpPut("Animations")]
+    public IActionResult UpdateAnimations([FromBody] AnimationsModel model)
+    {
+        if (!User.IsAdministrator())
+        {
+            return Forbidden();
+        }
+
+        var enabled = model?.Enabled ?? true;
+        return Save(configuration => configuration.EnableAnimations = enabled, new { enabled });
+    }
+
+    private static string[] QualityOptions()
+        => Clean(Configuration?.MediaQualityOptions) is { Length: > 0 } options ? options : PluginConfiguration.DefaultQualityOptions;
 
     [HttpPut("QualityOptions")]
     public IActionResult UpdateQualityOptions([FromBody] QualityOptionsModel model)
@@ -37,15 +66,6 @@ public sealed partial class ConfigurationController : ControllerBase
         }
 
         return Save(configuration => configuration.MediaQualityOptions = options, new { options });
-    }
-
-    [HttpGet("MediaOptions")]
-    public ActionResult<object> GetMediaOptions()
-    {
-        var configuration = Configuration;
-        return configuration is null
-            ? Unavailable()
-            : Ok(new { movies = configuration.EnableMovies, tvShows = configuration.EnableTvShows });
     }
 
     [HttpPut("MediaOptions")]
@@ -90,16 +110,9 @@ public sealed partial class ConfigurationController : ControllerBase
             totalRequests = requests.Count,
             // Keyed by status id, so it follows whatever statuses are configured.
             statusCounts = requests.GroupBy(request => request.Status).ToDictionary(group => group.Key, group => group.Count()),
-            pluginVersion = Plugin.Instance?.Version?.ToString() ?? "Unknown",
-            storageFilePath = service.StorageFilePath,
-            lastSaveTimestampUtc = service.LastSaveTimestampUtc
+            pluginVersion = Plugin.Instance?.Version?.ToString() ?? "Unknown"
         });
     }
-
-    /// <summary>Statuses in display order (the first is given to new requests).</summary>
-    [HttpGet("StatusOptions")]
-    public ActionResult<object> GetStatusOptions()
-        => Ok(new { options = Configuration?.GetStatusOptions() ?? PluginConfiguration.DefaultStatusOptions() });
 
     [HttpPut("StatusOptions")]
     public IActionResult UpdateStatusOptions([FromBody] StatusOptionsModel model)
@@ -186,4 +199,10 @@ public sealed class StatusOptionsModel
 {
     [JsonPropertyName("options")]
     public List<StatusOption>? Options { get; set; }
+}
+
+public sealed class AnimationsModel
+{
+    [JsonPropertyName("enabled")]
+    public bool Enabled { get; set; }
 }

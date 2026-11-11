@@ -207,56 +207,42 @@
     }
 
     async function loadSettings() {
-        const [quality, media, statuses] = await Promise.allSettled([
-            api("Requests/Configuration/QualityOptions"),
-            api("Requests/Configuration/MediaOptions"),
-            api("Requests/Configuration/StatusOptions")
-        ]);
-
-        if (statuses.status === "fulfilled") {
-            const options = field(statuses.value, "options") || [];
-            state.statuses = new Map(options.map((option) => [field(option, "id"), { name: field(option, "name"), color: field(option, "color") }]));
-            state.initialStatus = options.length ? field(options[0], "id") : "Pending";
-            // Status names/colours may have changed: redraw what's on screen.
-            renderMyRequests();
-            refreshCardStates();
+        let settings;
+        try {
+            // One call for everything the page needs.
+            settings = await api("Requests/Configuration/Client");
+        } catch (_) {
+            fillSelect(el.quality, state.quality);
+            return; // Keep the defaults; the page still works.
         }
 
-        if (quality.status === "fulfilled") {
-            const options = field(quality.value, "options");
-            state.quality = Array.isArray(options) && options.length ? options : DEFAULT_QUALITY;
-        }
+        const statuses = field(settings, "statusOptions") || [];
+        state.statuses = new Map(statuses.map((option) => [field(option, "id"), { name: field(option, "name"), color: field(option, "color") }]));
+        state.initialStatus = statuses.length ? field(statuses[0], "id") : "Pending";
+
+        const quality = field(settings, "qualityOptions");
+        state.quality = Array.isArray(quality) && quality.length ? quality : DEFAULT_QUALITY;
         fillSelect(el.quality, state.quality);
 
-        if (media.status === "fulfilled") {
-            state.media = {
-                movies: Boolean(field(media.value, "movies")),
-                tvShows: Boolean(field(media.value, "tvShows"))
-            };
-        }
+        state.media = { movies: Boolean(field(settings, "movies")), tvShows: Boolean(field(settings, "tvShows")) };
+        const types = [
+            state.media.movies && state.media.tvShows && "All",
+            state.media.movies && "Movies",
+            state.media.tvShows && "TV Shows"
+        ].filter(Boolean);
+        fillSelect(el.type, types);
+        el.typeContainer.hidden = types.length <= 1; // Only one type enabled: nothing to choose.
+        $("label[for=requestsSearchInput]").textContent = types.length > 1 ? "Search movies and TV shows"
+            : state.media.movies ? "Search movies" : "Search TV shows";
 
-        const values = [];
-        const labels = [];
-        if (state.media.movies && state.media.tvShows) {
-            values.push("All");
-            labels.push("All");
-        }
-        if (state.media.movies) {
-            values.push("Movies");
-            labels.push("Movies");
-        }
-        if (state.media.tvShows) {
-            values.push("TV Shows");
-            labels.push("TV Shows");
-        }
-        fillSelect(el.type, values, labels);
-        // Only one type enabled: nothing to choose.
-        el.typeContainer.hidden = values.length <= 1;
+        // Animations are pure CSS behind one class; reduced-motion users never get them (see CSS).
+        const animated = field(settings, "animations") !== false;
+        page.classList.toggle("requestsAnimated", animated);
+        dialog.classList.toggle("requestsAnimated", animated);
 
-        const label = state.media.movies && !state.media.tvShows ? "Search movies"
-            : !state.media.movies && state.media.tvShows ? "Search TV shows"
-                : "Search movies and TV shows";
-        $("label[for=requestsSearchInput]").textContent = label;
+        // Status names/colors may have changed: redraw what's on screen.
+        renderMyRequests();
+        refreshCardStates();
     }
 
     // ---------- my requests ----------
@@ -372,6 +358,11 @@
         button.disabled = true;
         try {
             await api(`Requests/${field(request, "id")}`, { method: "DELETE" });
+            const item = button.closest(".requestsMine-item");
+            if (item && page.classList.contains("requestsAnimated")) {
+                item.classList.add("is-leaving");
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            }
             await loadMyRequests();
         } catch (error) {
             button.disabled = false;
@@ -397,7 +388,7 @@
                 mine: Boolean(mine),
                 status: status,
                 text: mine ? statusLabel(status) : "Already requested",
-                icon: STATUS_ICONS[status] || "label",
+                icon: STATUS_ICONS[status] || "bookmark",
                 indicatorClass: "countIndicator requestsIndicator",
                 statusClass: statusClass(status),
                 color: mine ? statusColor(status) : ""
@@ -406,15 +397,38 @@
         return null;
     }
 
-    // Icons for the built-in statuses; statuses an administrator adds get a generic label icon.
+    // Card badge icons as inline SVG (Material icon paths). Jellyfin's icon font only contains
+    // the icons Jellyfin itself uses, so font icons it lacks render as empty boxes.
+    const SVG_PATHS = {
+        check: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
+        schedule: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
+        thumbUp: "M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z",
+        sync: "M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z",
+        block: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z",
+        bookmark: "M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
+    };
+
+    // Built-in statuses get a matching icon; statuses an administrator adds get a bookmark
+    // ("requested").
     const STATUS_ICONS = {
         Pending: "schedule",
-        Approved: "thumb_up",
+        Approved: "thumbUp",
         InProgress: "sync",
         Completed: "check",
         Denied: "block",
         Cancelled: "block"
     };
+
+    function svgIcon(name) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("viewBox", "0 0 24 24");
+        svg.setAttribute("aria-hidden", "true");
+        svg.setAttribute("class", "requestsIcon");
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", SVG_PATHS[name] || SVG_PATHS.bookmark);
+        svg.append(path);
+        return svg;
+    }
 
     function updateCard(card, item) {
         const indicators = card.querySelector(".cardIndicators");
@@ -429,7 +443,7 @@
             const indicator = document.createElement("div");
             indicator.className = `indicator ${current.indicatorClass}`;
             indicator.title = current.text;
-            indicator.append(icon(current.icon, "indicatorIcon"));
+            indicator.append(svgIcon(current.icon));
             indicators.append(indicator);
         }
     }
@@ -448,6 +462,7 @@
         card.type = "button";
         card.className = "card portraitCard card-hoverable requestsCard";
         card.dataset.index = String(index);
+        card.style.setProperty("--i", String(Math.min(index, 12))); // entrance stagger (CSS, capped)
         const year = field(item, "productionYear");
         card.setAttribute("aria-label", `${field(item, "name")}${year ? ` (${year})` : ""}`);
 
@@ -461,8 +476,17 @@
         const image = document.createElement("div");
         const poster = field(item, "posterUrl");
         if (poster) {
-            image.className = "cardImageContainer coveredImage cardContent";
-            image.style.backgroundImage = cssUrl(poster);
+            // A lazy <img> instead of a background image: off-screen posters don't download until
+            // scrolled to, and each fades in once decoded.
+            image.className = "cardImageContainer coveredImage cardContent requestsCard-image";
+            const img = document.createElement("img");
+            img.alt = "";
+            img.loading = "lazy";
+            img.decoding = "async";
+            img.addEventListener("load", () => img.classList.add("is-loaded"), { once: true });
+            img.addEventListener("error", () => img.remove(), { once: true });
+            img.src = poster;
+            image.append(img);
         } else {
             image.className = `cardImageContainer coveredImage cardContent defaultCardBackground defaultCardBackground${(index % 5) + 1}`;
             image.append(icon(isTv(item) ? "tv" : "movie", "cardImageIcon"));
@@ -490,6 +514,21 @@
         return card;
     }
 
+    // Placeholder cards while searching (static, or shimmering when animations are on).
+    function showSkeletons() {
+        const fragment = document.createDocumentFragment();
+        for (let index = 0; index < 6; index++) {
+            const card = document.createElement("div");
+            card.className = "card portraitCard requestsCard-skeleton";
+            card.setAttribute("aria-hidden", "true");
+            card.innerHTML = '<div class="cardBox"><div class="cardScalable"><div class="cardPadder cardPadder-portrait"></div>'
+                + '<div class="requestsSkeleton requestsSkeleton-poster"></div></div>'
+                + '<div class="requestsSkeleton requestsSkeleton-line"></div><div class="requestsSkeleton requestsSkeleton-line requestsSkeleton-short"></div></div>';
+            fragment.append(card);
+        }
+        el.results.replaceChildren(fragment);
+    }
+
     async function search(query) {
         if (state.searchController) {
             state.searchController.abort();
@@ -499,11 +538,11 @@
 
         setMessage(el.status, "Searching...");
         el.searchButton.disabled = true;
+        showSkeletons();
 
         try {
-            const type = el.typeContainer.hidden ? (el.type.value || "All") : el.type.value;
             const results = await api(
-                `Requests/Search?query=${encodeURIComponent(query)}&mediaType=${encodeURIComponent(type || "All")}`,
+                `Requests/Search?query=${encodeURIComponent(query)}&mediaType=${encodeURIComponent(el.type.value || "All")}`,
                 { signal: controller.signal });
             state.results = Array.isArray(results) ? results : [];
 
@@ -654,7 +693,6 @@
             sourceProvider: field(item, "sourceProvider") || "",
             mediaCategory: tv ? "TVShows" : "Movies",
             requestScope: scope,
-            requestKind: !tv ? "Movie" : scope === "SeasonSelection" ? "Season" : scope === "EpisodeSelection" ? "Episode" : "Series",
             requestedSeasonNumbers: seasons,
             requestedEpisodeIds: episodes,
             requestedEpisodeNames: episodes,
@@ -736,11 +774,17 @@
 
     // Themes give the search box, type picker and raised button different heights; match the
     // picker and button to the search box (they're already bottom-aligned) so the row lines up.
+    let alignedHeight = 0;
     function alignSearchControls() {
-        const height = el.input.offsetHeight;
-        if (!height) {
+        // Skip while the page is closed (no layout work), and when nothing changed.
+        if (page.closest("[hidden]")) {
             return;
         }
+        const height = el.input.offsetHeight;
+        if (!height || height === alignedHeight) {
+            return;
+        }
+        alignedHeight = height;
         [el.searchButton, el.type].forEach(function (control) {
             control.style.boxSizing = "border-box";
             control.style.height = height + "px";

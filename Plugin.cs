@@ -28,11 +28,11 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
         _applicationPaths = applicationPaths;
         _logger = logger;
         Requests = new RequestService(applicationPaths.PluginConfigurationsPath);
-        MetadataIdentify = new MetadataIdentifyService(providerManager);
         // The availability cache is filled by the "Requests: Detect library media" scheduled
         // task (startup + daily) and kept current through library events. Scanning the whole
         // library here would block plugin construction during server start-up.
         LibraryAvailability = new LibraryAvailabilityService(libraryManager);
+        MetadataIdentify = new MetadataIdentifyService(providerManager, LibraryAvailability);
 
         // Make the header button available even where the response middleware can't run.
         WebClientInjector.PatchIndexFile(applicationPaths.WebPath, logger);

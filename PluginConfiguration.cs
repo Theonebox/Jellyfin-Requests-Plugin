@@ -24,6 +24,9 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool EnableTvShows { get; set; } = true;
 
+    /// <summary>Subtle motion on the Requests page (fades, card hover). Purely CSS; off = no motion at all.</summary>
+    public bool EnableAnimations { get; set; } = true;
+
     // Ids match the values older versions stored, so existing requests keep their status.
     public static StatusOption[] DefaultStatusOptions() => new[]
     {

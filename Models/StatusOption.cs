@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 namespace Jellyfin.Plugin.Requests.Models;
 
 /// <summary>
-/// A request status the administrator can rename and recolour. Requests store <see cref="Id"/>,
+/// A request status the administrator can rename and recolor. Requests store <see cref="Id"/>,
 /// which never changes, so renaming a status never orphans existing requests.
 /// </summary>
 public sealed class StatusOption
@@ -25,7 +25,7 @@ public sealed class StatusOption
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
-    /// <summary>CSS hex colour, e.g. #66bb6a.</summary>
+    /// <summary>CSS hex color, e.g. #66bb6a.</summary>
     [JsonPropertyName("color")]
     public string Color { get; set; } = "#bdbdbd";
 }

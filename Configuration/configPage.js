@@ -230,7 +230,8 @@ export default function (view, params) {
             color.type = "color";
             color.value = /^#[0-9a-f]{6}$/i.test(status.color) ? status.color : "#bdbdbd";
             color.className = "requests-status-color";
-            color.setAttribute("aria-label", `Colour for ${status.name}`);
+            color.setAttribute("aria-label", `Color for ${status.name}`);
+            color.title = "Color";
             color.addEventListener("change", function () {
                 saveStatusOptions(state.statuses.map((item, i) => (i === index ? { ...item, color: color.value } : item)));
             });
@@ -350,26 +351,25 @@ export default function (view, params) {
             (result) => ({ ok: true, value: result }),
             (error) => ({ ok: false, error: error }));
 
-        const [quality, diagnostics, media, providers, statuses] = await Promise.all([
-            settle(api("Requests/Configuration/QualityOptions")),
+        const [settings, diagnostics, providers] = await Promise.all([
+            settle(api("Requests/Configuration/Client")),
             settle(api("Requests/Configuration/Diagnostics")),
-            settle(api("Requests/Configuration/MediaOptions")),
-            settle(api("Requests/Search/Providers")),
-            settle(api("Requests/Configuration/StatusOptions"))
+            settle(api("Requests/Search/Providers"))
         ]);
 
-        if (statuses.ok) {
-            state.statuses = normalizeStatuses(value(statuses.value, "options"));
+        if (settings.ok) {
+            const s = settings.value;
+            state.statuses = normalizeStatuses(value(s, "statusOptions"));
             renderStatusOptions();
-        } else {
-            $("#requestsStatusOptions").textContent = statuses.error.message;
-        }
-
-        if (quality.ok) {
-            state.qualityOptions = value(quality.value, "options") || [];
+            state.qualityOptions = value(s, "qualityOptions") || [];
             renderQualityOptions();
+            $("#requestsEnableMovies").checked = Boolean(value(s, "movies"));
+            $("#requestsEnableTvShows").checked = Boolean(value(s, "tvShows"));
+            $("#requestsEnableAnimations").checked = value(s, "animations") !== false;
         } else {
-            $("#requestsQualityOptions").textContent = quality.error.message;
+            ["#requestsEnableMovies", "#requestsEnableTvShows", "#requestsEnableAnimations"].forEach((id) => { $(id).disabled = true; });
+            $("#requestsQualityOptions").textContent = settings.error.message;
+            $("#requestsStatusOptions").textContent = settings.error.message;
         }
 
         if (diagnostics.ok) {
@@ -384,21 +384,25 @@ export default function (view, params) {
             $("#requestsGeneralTotals").textContent = "Unavailable";
         }
 
-        if (media.ok) {
-            $("#requestsEnableMovies").checked = Boolean(value(media.value, "movies"));
-            $("#requestsEnableTvShows").checked = Boolean(value(media.value, "tvShows"));
-        } else {
-            $("#requestsEnableMovies").disabled = true;
-            $("#requestsEnableTvShows").disabled = true;
-            setMessage("#requestsGeneralMessage", media.error.message, true);
-        }
-
         if (providers.ok) {
             const sources = value(providers.value, "metadataSources") || [];
             const status = value(providers.value, "status") || "Unknown";
             $("#requestsGeneralProviderStatus").textContent = sources.length ? `${status} (${sources.join(", ")})` : status;
         } else {
             $("#requestsGeneralProviderStatus").textContent = providers.error.message;
+        }
+    }
+
+    async function saveAnimations(checkbox) {
+        checkbox.disabled = true;
+        try {
+            await api("Requests/Configuration/Animations", "PUT", { enabled: checkbox.checked });
+            setMessage("#requestsGeneralMessage", `Animations ${checkbox.checked ? "on" : "off"}.`);
+        } catch (error) {
+            checkbox.checked = !checkbox.checked;
+            setMessage("#requestsGeneralMessage", error.message, true);
+        } finally {
+            checkbox.disabled = false;
         }
     }
 
@@ -465,8 +469,8 @@ export default function (view, params) {
             + `<td>${escapeHtml(scopeLabel(request))}</td>`
             + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
             + `<td>${escapeHtml(value(request, "note") || "")}</td>`
-            // Each option is coloured individually so the open list shows every status in its own
-            // colour; the select's colour only reflects the current status.
+            // Each option is colored individually so the open list shows every status in its own
+            // color; the select's color only reflects the current status.
             + `<td><select class="requests-status-select ${statusClass(status)}" style="color:${escapeHtml(statusColor(status))}" data-status aria-label="Request status">${choices.map((option) =>
                 `<option class="${statusClass(option.id)}" style="color:${escapeHtml(option.color)}" value="${escapeHtml(option.id)}"${option.id === status ? " selected" : ""}>${escapeHtml(option.name)}</option>`).join("")}</select></td>`
             + `<td><button type="button" class="raised emby-button" data-delete title="Delete request">Delete</button></td>`;
@@ -598,6 +602,7 @@ export default function (view, params) {
 
     $("#requestsEnableMovies").addEventListener("change", function () { saveMediaOptions(this); });
     $("#requestsEnableTvShows").addEventListener("change", function () { saveMediaOptions(this); });
+    $("#requestsEnableAnimations").addEventListener("change", function () { saveAnimations(this); });
 
     view.addEventListener("viewshow", async function () {
         showLoading(true);

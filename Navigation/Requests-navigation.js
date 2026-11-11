@@ -393,11 +393,32 @@
 
         // The header is (re)built after login and when switching layouts/users. The observer callback
         // is coalesced to one check per frame and does nothing when the button is already in place.
-        new MutationObserver(scheduleEnsureButton).observe(document.body, { childList: true, subtree: true });
+        // Most DOM changes (playback UI, card lists, ...) have nothing to do with the header, so
+        // they're filtered out cheaply (no layout reads) and the page isn't slowed down.
+        let lastHref = window.location.href;
+        new MutationObserver(function (records) {
+            const button = document.getElementById(BUTTON_ID);
+            if (!button || !button.isConnected || window.location.href !== lastHref) {
+                lastHref = window.location.href;
+                scheduleEnsureButton();
+                return;
+            }
+            for (const record of records) {
+                if (record.target.nodeType === 1 && record.target.closest(".MuiAppBar-root, .skinHeader")) {
+                    scheduleEnsureButton();
+                    return;
+                }
+            }
+        }).observe(document.body, { childList: true, subtree: true });
 
-        // Jellyfin navigation of any kind closes the Requests view.
-        window.addEventListener("hashchange", close);
-        window.addEventListener("popstate", close);
+        // Jellyfin navigation of any kind closes the Requests view (and may need the button
+        // removed/re-added, e.g. entering or leaving the dashboard).
+        const onNavigate = function () {
+            close();
+            scheduleEnsureButton();
+        };
+        window.addEventListener("hashchange", onNavigate);
+        window.addEventListener("popstate", onNavigate);
         document.addEventListener("viewshow", close);
 
         // Clicking another header/drawer control (home, back, search, tabs, user menu) closes it too.

@@ -18,25 +18,18 @@ public sealed class RequestService
     };
 
     private readonly List<MediaRequest> _requests;
+    private readonly string _filePath;
 
     public RequestService(string pluginConfigurationPath)
     {
         var directory = Path.Combine(pluginConfigurationPath, "Requests");
         Directory.CreateDirectory(directory);
-        StorageFilePath = Path.Combine(directory, "requests.json");
+        _filePath = Path.Combine(directory, "requests.json");
         _requests = Load();
-        if (File.Exists(StorageFilePath))
-        {
-            LastSaveTimestampUtc = File.GetLastWriteTimeUtc(StorageFilePath);
-        }
     }
-
-    public string StorageFilePath { get; }
 
     /// <summary>The first configured status: given to new requests; owners may cancel while in it.</summary>
     public static string InitialStatusId => Plugin.Instance?.Configuration.GetStatusOptions()[0].Id ?? "Pending";
-
-    public DateTime? LastSaveTimestampUtc { get; private set; }
 
     public IReadOnlyList<MediaRequest> GetAll()
     {
@@ -144,14 +137,14 @@ public sealed class RequestService
 
     private List<MediaRequest> Load()
     {
-        if (!File.Exists(StorageFilePath))
+        if (!File.Exists(_filePath))
         {
             return new List<MediaRequest>();
         }
 
         try
         {
-            var json = File.ReadAllText(StorageFilePath);
+            var json = File.ReadAllText(_filePath);
             var requests = string.IsNullOrWhiteSpace(json)
                 ? new List<MediaRequest>()
                 : JsonSerializer.Deserialize<List<MediaRequest>>(json, _jsonOptions) ?? new List<MediaRequest>();
@@ -166,10 +159,9 @@ public sealed class RequestService
 
     private void Save()
     {
-        var tempPath = StorageFilePath + ".tmp";
+        var tempPath = _filePath + ".tmp";
         File.WriteAllText(tempPath, JsonSerializer.Serialize(_requests, _jsonOptions));
-        File.Move(tempPath, StorageFilePath, true);
-        LastSaveTimestampUtc = DateTime.UtcNow;
+        File.Move(tempPath, _filePath, true);
     }
 
     private static MediaRequest Clone(MediaRequest request)
@@ -266,18 +258,10 @@ public sealed class RequestService
             {
                 request.RequestScope = RequestScope.EntireSeries;
             }
-
-            request.RequestKind = request.RequestScope switch
-            {
-                RequestScope.SeasonSelection => RequestKind.Season,
-                RequestScope.EpisodeSelection => RequestKind.Episode,
-                _ => RequestKind.Series
-            };
         }
         else
         {
             request.RequestScope = RequestScope.EntireMovie;
-            request.RequestKind = RequestKind.Movie;
         }
     }
 }

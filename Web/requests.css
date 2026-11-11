@@ -6,7 +6,7 @@
  *
  * Everything below is either layout specific to this page or a fallback wrapped in :where(),
  * which has zero specificity: Jellyfin's stylesheets, themes and the administrator's custom CSS
- * always win over these rules. Colours are derived from currentColor wherever possible so the
+ * always win over these rules. Colors are derived from currentColor wherever possible so the
  * page works on light and dark themes. Hooks for custom CSS: #requestsPage, .requestsPage,
  * .requestsCard, .requestsDialog, .requestsStatus-<status>.
  */
@@ -238,8 +238,21 @@
     color: #fff;
 }
 
-:where(.requestsResults .indicatorIcon) {
-    font-size: 1.3em;
+/* Badge icons are inline SVG and take the indicator's (theme) text color. */
+.requestsResults .requestsIcon {
+    display: block;
+    width: 1.2em;
+    height: 1.2em;
+    fill: currentColor;
+}
+
+/* Lazy poster image filling the card. */
+.requestsCard-image > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .requestsCard-state {
@@ -315,11 +328,13 @@
     padding: .2em .65em;
     border: .07em solid currentColor;
     border-radius: 1em;
+    /* Soft tint of the status's own color. */
+    background-color: color-mix(in srgb, currentColor 12%, transparent);
     font-size: .85em;
     white-space: nowrap;
 }
 
-/* Status colours come from the administrator's Status Options (set inline). Custom CSS can still
+/* Status colors come from the administrator's Status Options (set inline). Custom CSS can still
    target .requestsStatus-<id>, e.g. .requestsStatus-in-progress. */
 
 .requestsMine-note {
@@ -501,5 +516,131 @@
     .requestsDialog .requestsDialog-poster {
         width: 5.5em;
         height: 8.25em;
+    }
+}
+
+/* ---------- loading placeholders ---------- */
+
+.requestsCard-skeleton {
+    pointer-events: none;
+}
+
+.requestsSkeleton {
+    border-radius: .3em;
+    background-color: rgba(128, 128, 128, .16);
+}
+
+.requestsSkeleton-poster {
+    position: absolute;
+    inset: 0;
+}
+
+.requestsSkeleton-line {
+    height: .8em;
+    margin: .7em .6em 0;
+}
+
+.requestsSkeleton-short {
+    width: 55%;
+    margin-right: auto;
+    margin-left: auto;
+}
+
+/* ---------- motion ----------
+   Everything below runs only with the "Animations" setting on (.requestsAnimated) and never
+   for users who ask their system for reduced motion. Only opacity/transform are animated, which
+   the browser composites on the GPU without re-layout, so the cost is negligible. */
+
+@media (prefers-reduced-motion: no-preference) {
+    @keyframes requestsFadeUp {
+        from { opacity: 0; transform: translateY(.6em); }
+        to { opacity: 1; transform: none; }
+    }
+
+    @keyframes requestsFadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes requestsPop {
+        from { opacity: 0; transform: translateY(.75em) scale(.97); }
+        to { opacity: 1; transform: none; }
+    }
+
+    @keyframes requestsShimmer {
+        from { background-position: 150% 0; }
+        to { background-position: -50% 0; }
+    }
+
+    /* Page content eases in each time Requests is opened. */
+    .requestsAnimated .requestsPage-content {
+        animation: requestsFadeUp .35s cubic-bezier(.2, .7, .2, 1) both;
+    }
+
+    /* Result cards cascade in (stagger capped at 12 cards), and lift on hover. */
+    .requestsAnimated .requestsCard {
+        animation: requestsFadeUp .4s cubic-bezier(.2, .7, .2, 1) both;
+        animation-delay: calc(var(--i, 0) * 35ms);
+    }
+
+    .requestsAnimated .requestsCard .cardScalable {
+        transition: transform .25s cubic-bezier(.2, .7, .2, 1), box-shadow .25s ease;
+    }
+
+    .requestsAnimated .requestsCard:hover .cardScalable,
+    .requestsAnimated .requestsCard:focus-visible .cardScalable {
+        transform: translateY(-4px);
+        box-shadow: 0 .8em 1.6em rgba(0, 0, 0, .35);
+    }
+
+    .requestsAnimated .requestsCard .indicator {
+        animation: requestsFadeIn .3s ease both;
+    }
+
+    /* Posters fade in once decoded instead of popping in. */
+    .requestsAnimated .requestsCard-image > img {
+        opacity: 0;
+        transition: opacity .35s ease;
+    }
+
+    .requestsAnimated .requestsCard-image > img.is-loaded {
+        opacity: 1;
+    }
+
+    .requestsAnimated .requestsSkeleton {
+        background-image: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, .07) 50%, transparent 100%);
+        background-size: 200% 100%;
+        animation: requestsShimmer 1.3s linear infinite;
+    }
+
+    /* My Requests cards ease in, and fade out when cancelled. */
+    .requestsAnimated .requestsMine-item {
+        animation: requestsFadeUp .35s cubic-bezier(.2, .7, .2, 1) both;
+        transition: opacity .2s ease, transform .2s ease;
+    }
+
+    .requestsAnimated .requestsMine-item.is-leaving {
+        opacity: 0;
+        transform: scale(.97);
+    }
+
+    /* Dialog: backdrop fades, panel rises in. */
+    .requestsDialogContainer.requestsAnimated:not([hidden]) .requestsDialogBackdrop {
+        animation: requestsFadeIn .2s ease both;
+    }
+
+    .requestsDialogContainer.requestsAnimated:not([hidden]) .requestsDialog {
+        animation: requestsPop .28s cubic-bezier(.2, .7, .2, 1) both;
+    }
+
+    /* Tactile press on buttons. */
+    .requestsAnimated .emby-button,
+    .requestsDialogContainer.requestsAnimated .emby-button {
+        transition: transform .12s ease, filter .15s ease;
+    }
+
+    .requestsAnimated .emby-button:active:not(:disabled),
+    .requestsDialogContainer.requestsAnimated .emby-button:active:not(:disabled) {
+        transform: scale(.97);
     }
 }

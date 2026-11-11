@@ -4,10 +4,5 @@ public enum MediaCategory
 {
     All,
     Movies,
-    TVShows,
-    Music,
-    Audiobooks,
-    Books,
-    Games,
-    Comics
+    TVShows
 }

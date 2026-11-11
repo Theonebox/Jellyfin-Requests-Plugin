@@ -59,13 +59,11 @@ public sealed class SearchController : ControllerBase
                 .SearchAsync(query, category, cancellationToken)
                 .ConfigureAwait(false);
 
-            // Resolve library availability and existing requests (by anyone) in one pass, so the
-            // page can show "In library" / "Already requested" without extra calls per result.
-            var availability = Plugin.LibraryAvailability;
+            // "In library" is resolved while merging; add existing requests (by anyone) so the page
+            // can show "Already requested" without extra calls per result.
             var requests = Plugin.Requests;
             foreach (var result in results)
             {
-                result.InLibrary = availability?.IsInLibrary(result.ProviderIds.Values) ?? false;
                 result.RequestStatus = requests?.FindExistingStatus(result.MediaCategory, result.ProviderId, result.ProviderIds);
             }
 

@@ -30,8 +30,6 @@ public sealed class MediaRequest
 
     public RequestScope RequestScope { get; set; } = RequestScope.EntireMovie;
 
-    public RequestKind RequestKind { get; set; } = RequestKind.Movie;
-
     public List<int> RequestedSeasonNumbers { get; set; } = new();
 
     public List<string> RequestedEpisodeIds { get; set; } = new();

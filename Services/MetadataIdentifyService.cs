@@ -9,10 +9,12 @@ namespace Jellyfin.Plugin.Requests.Services;
 public sealed class MetadataIdentifyService
 {
     private readonly IProviderManager _providerManager;
+    private readonly LibraryAvailabilityService _library;
 
-    public MetadataIdentifyService(IProviderManager providerManager)
+    public MetadataIdentifyService(IProviderManager providerManager, LibraryAvailabilityService library)
     {
         _providerManager = providerManager;
+        _library = library;
     }
 
     public async Task<IReadOnlyList<MetadataSearchResult>> SearchAsync(
@@ -58,53 +60,97 @@ public sealed class MetadataIdentifyService
             AppendResults(results, tvTask.Result, "TV", MediaCategory.TVShows);
         }
 
-        return MergeByProviderId(results);
+        return MergeDuplicates(results, _library);
     }
 
     /// <summary>
-    /// Different metadata providers return the same title separately (e.g. TheMovieDb and OMDb).
-    /// Results of the same media type that share any provider id (Tmdb, Imdb, Tvdb, ...) — directly
-    /// or through a chain — are merged into one, keeping the first result's position and filling
-    /// gaps (poster, overview, year) from the others. Matching is by id only, never by name.
+    /// Different metadata providers return the same title separately (e.g. TheMovieDb returns only
+    /// a Tmdb id, OMDb only an Imdb id). Results of the same type are merged when, directly or
+    /// through a chain:
+    /// <list type="number">
+    /// <item>they share a provider id;</item>
+    /// <item>their ids point to the same library item (the library knows both a Tmdb and an Imdb
+    /// id for it, which links results that share no id themselves);</item>
+    /// <item>fallback for titles not in the library: they come from <em>different</em> providers and
+    /// have the same title and year (one provider never returns the same title twice, so its
+    /// separate results are never merged with each other).</item>
+    /// </list>
+    /// The first result keeps its position; gaps (poster, overview, year) are filled from the others.
+    /// Also sets <see cref="MetadataSearchResult.InLibrary"/> and adds the library's ids.
     /// </summary>
-    private static List<MetadataSearchResult> MergeByProviderId(List<MetadataSearchResult> results)
+    internal static List<MetadataSearchResult> MergeDuplicates(List<MetadataSearchResult> results, LibraryAvailabilityService? library)
     {
         var parent = Enumerable.Range(0, results.Count).ToArray();
         int Find(int index) => parent[index] == index ? index : parent[index] = Find(parent[index]);
+        void Union(int a, int b)
+        {
+            (a, b) = (Find(a), Find(b));
+            if (a != b)
+            {
+                parent[Math.Max(a, b)] = Math.Min(a, b); // the earlier result stays the root
+            }
+        }
 
         var owner = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        void Link(string key, int index)
+        {
+            if (owner.TryGetValue(key, out var other))
+            {
+                Union(other, index);
+            }
+            else
+            {
+                owner[key] = index;
+            }
+        }
+
+        var libraryItems = new Guid?[results.Count];
         for (var index = 0; index < results.Count; index++)
         {
-            foreach (var (provider, id) in results[index].ProviderIds)
+            var result = results[index];
+            foreach (var (provider, id) in result.ProviderIds)
             {
-                if (string.IsNullOrWhiteSpace(id))
+                if (!string.IsNullOrWhiteSpace(id))
                 {
-                    continue;
+                    Link($"{result.MediaCategory}|id|{provider}:{id.Trim()}", index);
                 }
+            }
 
-                var key = $"{results[index].MediaCategory}|{provider}|{id.Trim()}";
-                if (owner.TryGetValue(key, out var other))
+            libraryItems[index] = library?.FindItem(result.MediaCategory, result.ProviderIds);
+            if (libraryItems[index] is { } itemId)
+            {
+                Link($"{result.MediaCategory}|library|{itemId:N}", index);
+            }
+        }
+
+        // Fallback: same title + year from different providers.
+        for (var i = 0; i < results.Count; i++)
+        {
+            for (var j = i + 1; j < results.Count; j++)
+            {
+                var (a, b) = (results[i], results[j]);
+                if (a.MediaCategory == b.MediaCategory
+                    && a.ProductionYear is not null && a.ProductionYear == b.ProductionYear
+                    && !string.Equals(a.SourceProvider, b.SourceProvider, StringComparison.OrdinalIgnoreCase)
+                    && NormalizeTitle(a.Name) == NormalizeTitle(b.Name))
                 {
-                    // Union, keeping the earlier result as the group's root.
-                    var (a, b) = (Find(other), Find(index));
-                    if (a != b)
-                    {
-                        parent[Math.Max(a, b)] = Math.Min(a, b);
-                    }
-                }
-                else
-                {
-                    owner[key] = index;
+                    Union(i, j);
                 }
             }
         }
 
         var merged = new List<MetadataSearchResult>();
         var byRoot = new Dictionary<int, MetadataSearchResult>();
+        var libraryByRoot = new Dictionary<int, Guid>();
         for (var index = 0; index < results.Count; index++)
         {
             var root = Find(index);
             var result = results[index];
+            if (libraryItems[index] is { } itemId)
+            {
+                libraryByRoot.TryAdd(root, itemId);
+            }
+
             if (!byRoot.TryGetValue(root, out var target))
             {
                 byRoot[root] = result;
@@ -130,13 +176,26 @@ public sealed class MetadataIdentifyService
             target.ProductionYear ??= result.ProductionYear;
         }
 
-        foreach (var result in merged)
+        foreach (var (root, result) in byRoot)
         {
+            if (libraryByRoot.TryGetValue(root, out var itemId))
+            {
+                result.InLibrary = true;
+                foreach (var (provider, id) in library?.GetProviderIds(itemId) ?? new Dictionary<string, string>())
+                {
+                    result.ProviderIds.TryAdd(provider, id);
+                }
+            }
+
             result.ProviderId = GetProviderId(result.ProviderIds, "Tmdb", "Imdb", "Tvdb");
         }
 
         return merged;
     }
+
+    // "Project Hail Mary" == "project hail-mary": case, spacing and punctuation don't matter.
+    private static string NormalizeTitle(string title)
+        => new string(title.Where(char.IsLetterOrDigit).Select(char.ToLowerInvariant).ToArray());
 
     public IReadOnlyList<string> GetConfiguredProviders()
     {
