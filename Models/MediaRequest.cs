@@ -36,7 +36,11 @@ public sealed class MediaRequest
 
     public List<string> RequestedEpisodeNames { get; set; } = new();
 
+    /// <summary>The requester's note.</summary>
     public string Note { get; set; } = string.Empty;
+
+    /// <summary>An administrator's reply shown to the requester (e.g. why it was denied).</summary>
+    public string AdminNote { get; set; } = string.Empty;
 
     public string MediaQuality { get; set; } = string.Empty;
 

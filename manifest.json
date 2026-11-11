@@ -2,18 +2,19 @@
     {
         "guid": "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
         "name": "Requests",
-        "description": "Allows users to submit media requests.",
-        "overview": "A Jellyfin plugin for requesting movies and TV shows.",
+        "description": "Let users request movies and TV shows, and manage every request from the dashboard.",
+        "overview": "Adds a Requests button to the Jellyfin header so every user can search for movies and TV shows, using the metadata providers you already have, and request them: a whole movie or series, specific seasons or episodes, with a preferred quality and a note. Titles you already own are marked In library, and duplicates are flagged. Administrators manage all requests from the dashboard, with customizable statuses (name, color and icon), quality options and media types. No external services or API keys needed.",
         "owner": "Theonebox",
         "category": "General",
+        "imageUrl": "https://raw.githubusercontent.com/Theonebox/Jellyfin-Requests-Plugin/main/images/logo.png",
         "versions": [
             {
-                "version": "1.0.0.73",
-                "changelog": "Search results for the same title now merge across providers (linked through your library's IDs, or same title and year); custom statuses get a proper icon and all badge icons render reliably; subtle animations with an on/off switch under General > Appearance; faster page loads and less background work; \"colour\" is now \"color\".",
+                "version": "1.0.0.75",
+                "changelog": "Pick an icon for each status and reorder quality and status options; administrators can reply to a request (shown to the requester next to the status); optional descriptions for quality options; notes shown in italics; movies no longer show a scope and dates show without the time in the admin table; the header button picks up your theme's button style and bounces on hover (follows the Animations setting); plugin logo and description; fixes requests and results from different providers with the same ID number being treated as the same title; server-side note length limits.",
                 "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.73/Requests_1.0.0.73.zip",
-                "checksum": "71753440ff53cd552238fc70627207b8",
-                "timestamp": "2026-11-11T16:00:00Z"
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.75/Requests_1.0.0.75.zip",
+                "checksum": "bf19f86647beadfb094a22f0f04fb5b4",
+                "timestamp": "2026-11-11T22:00:00Z"
             }
         ]
     }

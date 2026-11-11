@@ -1,11 +1,9 @@
-﻿// Administrator settings controller for the Requests plugin.
+// Administrator settings controller for the Requests plugin.
 //
 // Jellyfin loads this file as an ES module through the page's
 // data-controller="__plugin/RequestsConfigurationjs" attribute and creates
 // one controller per view. All listeners are bound to elements inside the
 // view, so nothing outlives the page when Jellyfin destroys it.
-
-const STATUS_OPTIONS = ["Pending", "Approved", "Denied", "InProgress", "Available", "Completed", "Cancelled"];
 
 function apiUrl(path) {
     const client = window.ApiClient;
@@ -65,12 +63,15 @@ function escapeHtml(text) {
     return span.innerHTML;
 }
 
-function formatDate(input) {
+function formatDate(input, withTime) {
     if (!input) {
         return "Unknown";
     }
     const date = new Date(input);
-    return Number.isNaN(date.getTime()) ? "Unknown" : date.toLocaleString();
+    if (Number.isNaN(date.getTime())) {
+        return "Unknown";
+    }
+    return withTime ? date.toLocaleString() : date.toLocaleDateString();
 }
 
 function scopeLabel(request) {
@@ -81,7 +82,8 @@ function scopeLabel(request) {
     if (current === "EpisodeSelection") {
         return "Episodes " + (value(request, "requestedEpisodeNames") || value(request, "requestedEpisodeIds") || []).join(", ");
     }
-    return current === "EntireSeries" ? "Entire Series" : "Entire Movie";
+    // Movies are always the whole movie, so there's nothing to say.
+    return current === "EntireSeries" ? "Entire series" : "";
 }
 
 // Class hook for custom CSS, e.g. .requests-status-in-progress.
@@ -103,7 +105,8 @@ export default function (view, params) {
     const state = {
         requests: [],
         qualityOptions: [],
-        statuses: [], // [{ id, name, color }] in display order; the first is given to new requests
+        statuses: [], // [{ id, name, color, icon }] in display order; the first is given to new requests
+        icons: [], // [{ key, label, path }] the icons a status can use (from the server)
         descending: true,
         generalLoaded: false,
         isAdministrator: null
@@ -159,6 +162,12 @@ export default function (view, params) {
 
     // ---------- General tab ----------
 
+    function normalizeQuality(options) {
+        return (options || []).map((option) => (typeof option === "string"
+            ? { name: option, description: "" }
+            : { name: value(option, "name") || "", description: value(option, "description") || "" }));
+    }
+
     function renderQualityOptions() {
         const target = $("#requestsQualityOptions");
         target.replaceChildren();
@@ -166,20 +175,31 @@ export default function (view, params) {
             const row = document.createElement("div");
             row.className = "requests-quality-row";
 
-            const input = document.createElement("input");
-            input.type = "text";
-            input.value = option;
-            input.setAttribute("aria-label", `Media quality option ${index + 1}`);
-            input.addEventListener("change", function () {
-                const next = input.value.trim();
+            const update = (changes) => saveQualityOptions(state.qualityOptions.map((item, i) => (i === index ? { ...item, ...changes } : item)));
+
+            const name = document.createElement("input");
+            name.type = "text";
+            name.value = option.name;
+            name.className = "requests-quality-name";
+            name.setAttribute("aria-label", `Media quality option ${index + 1}`);
+            name.addEventListener("change", function () {
+                const next = name.value.trim();
                 if (!next) {
-                    input.value = state.qualityOptions[index];
+                    name.value = option.name;
                     return;
                 }
-                const updated = state.qualityOptions.slice();
-                updated[index] = next;
-                saveQualityOptions(updated);
+                update({ name: next });
             });
+
+            // Optional detail shown to users next to the quality (not in the admin requests table).
+            const description = document.createElement("input");
+            description.type = "text";
+            description.value = option.description;
+            description.className = "requests-quality-description";
+            description.placeholder = "Description (optional)";
+            description.maxLength = 200;
+            description.setAttribute("aria-label", `Description for ${option.name}`);
+            description.addEventListener("change", () => update({ description: description.value.trim() }));
 
             const remove = document.createElement("button");
             remove.type = "button";
@@ -188,12 +208,12 @@ export default function (view, params) {
             remove.disabled = state.qualityOptions.length <= 1;
             remove.title = remove.disabled ? "At least one quality option is required." : "Remove this option";
             remove.addEventListener("click", function () {
-                const updated = state.qualityOptions.slice();
-                updated.splice(index, 1);
-                saveQualityOptions(updated);
+                saveQualityOptions(state.qualityOptions.filter((_, i) => i !== index));
             });
 
-            row.append(input, remove);
+            const move = createMoveButtons(index, state.qualityOptions.length, `"${option.name}"`,
+                (from, to) => saveQualityOptions(moved(state.qualityOptions, from, to)));
+            row.append(name, description, move, remove);
             target.append(row);
         });
     }
@@ -201,14 +221,14 @@ export default function (view, params) {
     async function saveQualityOptions(options, focusLast) {
         try {
             const result = await api("Requests/Configuration/QualityOptions", "PUT", { options: options });
-            state.qualityOptions = value(result, "options") || options;
+            state.qualityOptions = normalizeQuality(value(result, "options") || options);
             setMessage("#requestsGeneralMessage", "Quality options saved.");
         } catch (error) {
             setMessage("#requestsGeneralMessage", error.message, true);
         }
         renderQualityOptions();
         if (focusLast) {
-            const inputs = view.querySelectorAll("#requestsQualityOptions input");
+            const inputs = view.querySelectorAll("#requestsQualityOptions .requests-quality-name");
             const last = inputs[inputs.length - 1];
             if (last) {
                 last.focus();
@@ -279,10 +299,115 @@ export default function (view, params) {
             if (index === 0) {
                 name.title = "New requests start in this status.";
             }
-            row.append(color, name, remove);
+            const move = createMoveButtons(index, state.statuses.length, `"${status.name}"`,
+                (from, to) => saveStatusOptions(moved(state.statuses, from, to)));
+            row.append(color, name, createIconButton(status, index), move, remove);
             target.append(row);
         });
         populateStatusFilter();
+    }
+
+    const ARROW_UP = "M7.41 15.41 12 10.83l4.59 4.58L18 14l-6-6-6 6z";
+    const ARROW_DOWN = "M7.41 8.59 12 13.17l4.59-4.58L18 10l-6 6-6-6z";
+
+    // Up/down buttons for reordering a list row. onMove(from, to) saves the new order.
+    function createMoveButtons(index, count, label, onMove) {
+        const group = document.createElement("div");
+        group.className = "requests-move-buttons";
+        [["up", ARROW_UP, index - 1], ["down", ARROW_DOWN, index + 1]].forEach(function ([direction, path, target]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "requests-move-button";
+            button.title = `Move ${direction}`;
+            button.setAttribute("aria-label", `Move ${label} ${direction}`);
+            button.disabled = target < 0 || target >= count;
+            button.append(svg(path, "requests-icon-svg"));
+            button.addEventListener("click", () => onMove(index, target));
+            group.append(button);
+        });
+        return group;
+    }
+
+    function moved(list, from, to) {
+        const copy = list.slice();
+        const [item] = copy.splice(from, 1);
+        copy.splice(to, 0, item);
+        return copy;
+    }
+
+    function svg(path, className) {
+        const ns = "http://www.w3.org/2000/svg";
+        const element = document.createElementNS(ns, "svg");
+        element.setAttribute("viewBox", "0 0 24 24");
+        element.setAttribute("aria-hidden", "true");
+        element.setAttribute("class", className);
+        const shape = document.createElementNS(ns, "path");
+        shape.setAttribute("d", path || "");
+        element.append(shape);
+        return element;
+    }
+
+    function iconFor(key) {
+        return state.icons.find((icon) => icon.key === key) || state.icons.find((icon) => icon.key === "bookmark");
+    }
+
+    // The icon button shows the status's current icon (in its color); clicking it opens a grid
+    // of the available icons. Picking one saves immediately.
+    function createIconButton(status, index) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "requests-icon-picker";
+
+        const current = iconFor(status.icon);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "requests-icon-button";
+        button.style.color = status.color;
+        button.title = `Icon: ${current ? current.label : "none"}`;
+        button.setAttribute("aria-label", `Icon for ${status.name}`);
+        button.setAttribute("aria-haspopup", "true");
+        button.setAttribute("aria-expanded", "false");
+        button.append(svg(current && current.path, "requests-icon-svg"));
+
+        const menu = document.createElement("div");
+        menu.className = "requests-icon-menu";
+        menu.setAttribute("role", "menu");
+        menu.hidden = true;
+        state.icons.forEach(function (icon) {
+            const choice = document.createElement("button");
+            choice.type = "button";
+            choice.className = "requests-icon-choice" + (icon.key === (current && current.key) ? " is-selected" : "");
+            choice.title = icon.label;
+            choice.setAttribute("role", "menuitemradio");
+            choice.setAttribute("aria-checked", String(icon.key === (current && current.key)));
+            choice.setAttribute("aria-label", icon.label);
+            choice.append(svg(icon.path, "requests-icon-svg"));
+            choice.addEventListener("click", function () {
+                closeIconMenus();
+                if (icon.key !== status.icon) {
+                    saveStatusOptions(state.statuses.map((item, i) => (i === index ? { ...item, icon: icon.key } : item)));
+                }
+            });
+            menu.append(choice);
+        });
+
+        button.addEventListener("click", function (event) {
+            event.stopPropagation();
+            const opening = menu.hidden;
+            closeIconMenus();
+            if (opening) {
+                menu.hidden = false;
+                button.setAttribute("aria-expanded", "true");
+                (menu.querySelector(".is-selected") || menu.firstElementChild)?.focus();
+            }
+        });
+
+        wrapper.append(button, menu);
+        return wrapper;
+    }
+
+    function closeIconMenus() {
+        view.querySelectorAll(".requests-icon-menu").forEach((menu) => { menu.hidden = true; });
+        view.querySelectorAll(".requests-icon-button").forEach((button) => button.setAttribute("aria-expanded", "false"));
     }
 
     async function saveStatusOptions(options, focusLast) {
@@ -308,7 +433,8 @@ export default function (view, params) {
         return (options || []).map((option) => ({
             id: value(option, "id"),
             name: value(option, "name"),
-            color: value(option, "color")
+            color: value(option, "color"),
+            icon: value(option, "icon")
         }));
     }
 
@@ -359,9 +485,10 @@ export default function (view, params) {
 
         if (settings.ok) {
             const s = settings.value;
+            state.icons = (value(s, "statusIcons") || []).map((icon) => ({ key: value(icon, "key"), label: value(icon, "label"), path: value(icon, "path") }));
             state.statuses = normalizeStatuses(value(s, "statusOptions"));
             renderStatusOptions();
-            state.qualityOptions = value(s, "qualityOptions") || [];
+            state.qualityOptions = normalizeQuality(value(s, "qualityOptions"));
             renderQualityOptions();
             $("#requestsEnableMovies").checked = Boolean(value(s, "movies"));
             $("#requestsEnableTvShows").checked = Boolean(value(s, "tvShows"));
@@ -420,7 +547,7 @@ export default function (view, params) {
     function renderDetails(request) {
         const providerIds = value(request, "providerIds") || {};
         const history = (value(request, "statusHistory") || [])
-            .map((change) => `${statusLabel(value(change, "status"))} (${formatDate(value(change, "changedAtUtc"))})`)
+            .map((change) => `${statusLabel(value(change, "status"))} (${formatDate(value(change, "changedAtUtc"), true)})`)
             .join(" → ");
         const year = value(request, "productionYear");
 
@@ -429,14 +556,14 @@ export default function (view, params) {
             ["Year", year],
             ["Requester", value(request, "userName")],
             ["Request Date", formatDate(value(request, "requestedAtUtc"))],
-            ["Media Type", value(request, "mediaType")],
-            ["Scope", scopeLabel(request)],
+            ["Media Type", [value(request, "mediaType"), scopeLabel(request)].filter(Boolean).join(" · ")],
             ["Quality", value(request, "mediaQuality")],
             ["Status", statusLabel(value(request, "status"))],
             ["Status History", history],
             ["Search Provider", value(request, "sourceProvider")],
             ["Provider IDs", Object.entries(providerIds).map((pair) => `${pair[0]}: ${pair[1]}`).join(", ")],
-            ["Notes", value(request, "note")]
+            ["Notes", value(request, "note")],
+            ["Response", value(request, "adminNote")]
         ].map((item) => `<dt>${escapeHtml(item[0])}</dt><dd>${escapeHtml(item[1] || "Not specified")}</dd>`).join("");
 
         $("#requestsDetailsTitle").textContent = value(request, "title") || "Request Details";
@@ -452,6 +579,58 @@ export default function (view, params) {
         $("#requestsAdminDetails").hidden = false;
     }
 
+    // ---------- Replies to requesters ----------
+
+    let responseTarget = null; // { request, button } while the reply dialog is open
+
+    function updateResponseButton(button, request) {
+        const note = value(request, "adminNote") || "";
+        button.textContent = note ? "Edit reply" : "Reply";
+        button.title = note ? `Your reply: ${note}` : "Send the requester a note (e.g. why it was denied)";
+        button.classList.toggle("requests-response-sent", Boolean(note));
+    }
+
+    function openResponseDialog(request, button) {
+        responseTarget = { request: request, button: button };
+        const note = value(request, "adminNote") || "";
+        $("#requestsResponseTitle").textContent = `Reply about "${value(request, "title") || "this request"}"`;
+        $("#requestsResponseFor").textContent = `Shown to ${value(request, "userName") || "the requester"} next to the status in My Requests.`;
+        $("#requestsResponseText").value = note;
+        $("#requestsResponseClear").hidden = !note;
+        setMessage("#requestsResponseMessage", "");
+        $("#requestsResponseDialog").hidden = false;
+        $("#requestsResponseText").focus();
+    }
+
+    function closeResponseDialog() {
+        $("#requestsResponseDialog").hidden = true;
+        if (responseTarget && responseTarget.button.isConnected) {
+            responseTarget.button.focus();
+        }
+        responseTarget = null;
+    }
+
+    async function saveResponse(note) {
+        if (!responseTarget) {
+            return;
+        }
+        const { request, button } = responseTarget;
+        const buttons = view.querySelectorAll("#requestsResponseDialog button");
+        buttons.forEach((element) => { element.disabled = true; });
+        try {
+            await api(`Requests/${value(request, "id")}/response`, "PUT", { note: note });
+            request.adminNote = note;
+            request.AdminNote = note;
+            updateResponseButton(button, request);
+            closeResponseDialog();
+            setMessage("#requestsAdminMessage", note ? `Reply saved for "${value(request, "title")}".` : `Reply removed from "${value(request, "title")}".`);
+        } catch (error) {
+            setMessage("#requestsResponseMessage", error.message, true);
+        } finally {
+            buttons.forEach((element) => { element.disabled = false; });
+        }
+    }
+
     function buildRow(request) {
         const id = value(request, "id");
         const posterUrl = value(request, "posterUrl");
@@ -463,12 +642,13 @@ export default function (view, params) {
         row.innerHTML =
             `<td>${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy">` : ""}</td>`
             + `<td><button type="button" class="requests-admin-title" data-details>${escapeHtml(value(request, "title") || "Untitled")}</button>`
-            + `<div class="fieldDescription">${escapeHtml(value(request, "mediaType") || "")}</div></td>`
+            // Type, plus what was requested for TV (seasons/episodes); movies need no scope.
+            + `<div class="fieldDescription">${escapeHtml([value(request, "mediaType"), scopeLabel(request)].filter(Boolean).join(" · "))}</div></td>`
             + `<td>${escapeHtml(value(request, "userName") || "Unknown")}</td>`
             + `<td>${escapeHtml(formatDate(value(request, "requestedAtUtc")))}</td>`
-            + `<td>${escapeHtml(scopeLabel(request))}</td>`
             + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
             + `<td>${escapeHtml(value(request, "note") || "")}</td>`
+            + `<td><button type="button" class="raised emby-button requests-response-button" data-response></button></td>`
             // Each option is colored individually so the open list shows every status in its own
             // color; the select's color only reflects the current status.
             + `<td><select class="requests-status-select ${statusClass(status)}" style="color:${escapeHtml(statusColor(status))}" data-status aria-label="Request status">${choices.map((option) =>
@@ -478,6 +658,10 @@ export default function (view, params) {
         row.querySelector("[data-details]").addEventListener("click", function () {
             renderDetails(request);
         });
+
+        const responseButton = row.querySelector("[data-response]");
+        updateResponseButton(responseButton, request);
+        responseButton.addEventListener("click", () => openResponseDialog(request, responseButton));
 
         const select = row.querySelector("[data-status]");
         select.addEventListener("change", async function () {
@@ -585,19 +769,43 @@ export default function (view, params) {
         element.addEventListener("click", () => { $("#requestsAdminDetails").hidden = true; });
     });
 
+    view.querySelectorAll("[data-close-response]").forEach((element) => element.addEventListener("click", closeResponseDialog));
+    $("#requestsResponseSave").addEventListener("click", () => saveResponse($("#requestsResponseText").value.trim()));
+    $("#requestsResponseClear").addEventListener("click", () => saveResponse(""));
+
     $("#requestsQualityAdd").addEventListener("click", function () {
         let name = "New option";
         let suffix = 2;
-        const existing = state.qualityOptions.map((option) => option.toLowerCase());
+        const existing = state.qualityOptions.map((option) => option.name.toLowerCase());
         while (existing.includes(name.toLowerCase())) {
             name = `New option ${suffix++}`;
         }
-        saveQualityOptions(state.qualityOptions.concat(name), true);
+        saveQualityOptions(state.qualityOptions.concat({ name: name, description: "" }), true);
     });
 
     $("#requestsStatusAdd").addEventListener("click", function () {
         // New statuses are sent without an id; the server assigns a permanent one.
-        saveStatusOptions(state.statuses.concat({ id: "", name: "New status", color: "#bdbdbd" }), true);
+        saveStatusOptions(state.statuses.concat({ id: "", name: "New status", color: "#bdbdbd", icon: "bookmark" }), true);
+    });
+
+    // Icon menus close on any outside click or Escape.
+    view.addEventListener("click", function (event) {
+        if (!event.target.closest(".requests-icon-picker")) {
+            closeIconMenus();
+        }
+    });
+    // Escape closes whatever is on top: an icon menu, the reply dialog or the details dialog.
+    view.addEventListener("keydown", function (event) {
+        if (event.key !== "Escape") {
+            return;
+        }
+        if (view.querySelector(".requests-icon-menu:not([hidden])")) {
+            closeIconMenus();
+        } else if (!$("#requestsResponseDialog").hidden) {
+            closeResponseDialog();
+        } else if (!$("#requestsAdminDetails").hidden) {
+            $("#requestsAdminDetails").hidden = true;
+        }
     });
 
     $("#requestsEnableMovies").addEventListener("change", function () { saveMediaOptions(this); });

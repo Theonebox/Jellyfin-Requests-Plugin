@@ -23,9 +23,47 @@
     }());
 
     let addScheduled = false;
+    let animationsChecked = false;
     let viewPromise = null;
 
     // ---------- helpers ----------
+
+    // ---------- Animations setting (header bounce) ----------
+    // The last known value is cached so it applies instantly on the next load; it is refreshed
+    // from the server once per web-client load, and the Requests page updates it too.
+    const ANIMATIONS_KEY = "requests.animations";
+
+    function setAnimations(enabled) {
+        document.documentElement.classList.toggle("requestsAnimations", enabled);
+        try {
+            window.localStorage.setItem(ANIMATIONS_KEY, enabled ? "1" : "0");
+        } catch (_) {
+            // Storage unavailable (private mode); the class still applies for this session.
+        }
+    }
+
+    function applyCachedAnimations() {
+        let cached = null;
+        try {
+            cached = window.localStorage.getItem(ANIMATIONS_KEY);
+        } catch (_) {
+            // Ignore.
+        }
+        document.documentElement.classList.toggle("requestsAnimations", cached !== "0");
+    }
+
+    function refreshAnimations() {
+        const api = apiClient();
+        const token = api && typeof api.accessToken === "function" ? api.accessToken() : "";
+        fetch(api.getUrl("Requests/Configuration/Client"), { headers: { Accept: "application/json", Authorization: `MediaBrowser Token="${token}"` } })
+            .then((response) => (response.ok ? response.json() : null))
+            .then((settings) => {
+                if (settings) {
+                    setAnimations((settings.animations ?? settings.Animations) !== false);
+                }
+            })
+            .catch(() => { /* keep the cached value */ });
+    }
 
     function apiClient() {
         return window.ApiClient;
@@ -66,8 +104,18 @@
             + ` overscroll-behavior: contain; z-index: 998; -webkit-overflow-scrolling: touch; }`
             + `:where(#${VIEW_ID}) { background-color: var(--requests-page-background-color, #101010);`
             + ` background-image: var(--requests-page-background-image, none); background-size: cover; background-attachment: fixed; }`
-            + `#${BUTTON_ID}.requestsHeaderButton-mui:hover { background-color: rgba(128, 128, 128, .15) !important; }`
-            + `#${BUTTON_ID}.requestsHeaderButton-mui.requestsHeaderButton-active { background-color: rgba(128, 128, 128, .2) !important; }`;
+            // Fallback look for the React-header button; zero specificity, so any theme wins.
+            + `:where(#${BUTTON_ID}.requestsHeaderButton-mui) { border-radius: 50%; background-color: transparent; }`
+            + `:where(#${BUTTON_ID}.requestsHeaderButton-mui:hover) { background-color: rgba(128, 128, 128, .15); }`
+            + `:where(#${BUTTON_ID}.requestsHeaderButton-mui.requestsHeaderButton-active) { background-color: rgba(128, 128, 128, .2); }`
+            // Hover bounce on the icon (not the button, so theme button styles are untouched).
+            // Only with the Animations setting on, and never for reduced-motion users.
+            + `@media (prefers-reduced-motion: no-preference) {`
+            + ` @keyframes requestsHeaderBounce { 0%, 100% { transform: none; } 30% { transform: translateY(-4px) scale(1.08); }`
+            + ` 55% { transform: translateY(1px) scale(.97); } 75% { transform: translateY(-1px); } }`
+            + ` html.requestsAnimations #${BUTTON_ID}:hover > svg, html.requestsAnimations #${BUTTON_ID}:hover > .material-icons,`
+            + ` html.requestsAnimations #${BUTTON_ID}:focus-visible > svg, html.requestsAnimations #${BUTTON_ID}:focus-visible > .material-icons`
+            + ` { animation: requestsHeaderBounce .55s cubic-bezier(.3, .7, .4, 1); } }`;
         document.head.append(style);
     }
 
@@ -119,13 +167,15 @@
         return null;
     }
 
-    // React header: the button is fully self-styled with inline styles matching MUI's 48px icon
-    // button / 24px icon. It deliberately copies nothing from neighbouring buttons, whose styling
-    // comes from generated CSS classes that aren't always present (which left an unstyled,
-    // empty browser button on some loads).
+    // React header: the button carries MUI's *generic* class names (MuiButtonBase-root,
+    // MuiIconButton-root) so themes that style header buttons through them, such as Abyss's glass
+    // look, apply to it too. It never copies a neighbour's generated css-xxx classes, which aren't
+    // always present (that once left an unstyled, empty button). Layout is inline; the look
+    // (shape, background, hover) is in low-priority CSS (see injectBaseStyles) so themes win.
+    const MUI_CLASSES = "MuiButtonBase-root MuiIconButton-root MuiIconButton-colorInherit MuiIconButton-sizeLarge";
     const MUI_BUTTON_STYLE = "display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;"
-        + "flex:0 0 auto;width:48px;height:48px;padding:0;margin:0;border:0;border-radius:50%;"
-        + "background:transparent;color:inherit;font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;";
+        + "flex:0 0 auto;width:48px;height:48px;padding:0;margin:0;border:0;"
+        + "color:inherit;font:inherit;cursor:pointer;-webkit-appearance:none;appearance:none;";
     const MUI_ICON_STYLE = "display:block;width:24px;height:24px;fill:currentColor;flex-shrink:0;pointer-events:none;";
 
     function createButton(point) {
@@ -142,7 +192,7 @@
             // Same markup Jellyfin uses for its own classic header icons.
             button.innerHTML = '<span class="material-icons how_to_vote" aria-hidden="true"></span>';
         } else {
-            button.className = "requestsHeaderButton requestsHeaderButton-mui";
+            button.className = `${MUI_CLASSES} requestsHeaderButton requestsHeaderButton-mui`;
             button.style.cssText = MUI_BUTTON_STYLE;
             button.innerHTML = `<svg focusable="false" aria-hidden="true" viewBox="0 0 24 24" style="${MUI_ICON_STYLE}">`
                 + `<path d="${HOW_TO_VOTE_PATH}"></path></svg>`;
@@ -178,6 +228,11 @@
         if (button && button.dataset.kind !== point.kind) {
             button.remove(); // Header changed (layout switch, SyncPlay appeared); rebuild.
             button = null;
+        }
+
+        if (!animationsChecked) {
+            animationsChecked = true;
+            refreshAnimations();
         }
 
         if (!button) {
@@ -388,6 +443,7 @@
     // ---------- startup ----------
 
     function initialize() {
+        applyCachedAnimations();
         injectBaseStyles();
         ensureButton();
 
@@ -445,7 +501,7 @@
             }
         });
 
-        window.RequestsNavigation = { open: open, close: close, toggle: toggle };
+        window.RequestsNavigation = { open: open, close: close, toggle: toggle, setAnimations: setAnimations };
     }
 
     if (document.readyState === "loading") {

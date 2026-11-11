@@ -77,6 +77,28 @@ public sealed class RequestService
         }
     }
 
+    /// <summary>Sets (or clears, when empty) the administrator's reply on a request.</summary>
+    public MediaRequest? UpdateAdminNote(Guid id, string note)
+    {
+        lock (_syncRoot)
+        {
+            var request = _requests.FirstOrDefault(item => item.Id == id);
+            if (request is null)
+            {
+                return null;
+            }
+
+            note = note.Trim();
+            if (!string.Equals(request.AdminNote, note, StringComparison.Ordinal))
+            {
+                request.AdminNote = note;
+                Save();
+            }
+
+            return Clone(request);
+        }
+    }
+
     public MediaRequest? UpdateStatus(Guid id, string status)
     {
         lock (_syncRoot)
@@ -205,17 +227,19 @@ public sealed class RequestService
         return false;
     }
 
+    // Compares provider-qualified ids (Tmdb:555 vs Tvdb:555 are different titles). The bare
+    // ProviderId is only a fallback for records that carry no provider id map.
     private static bool HasMatchingProviderId(MediaRequest left, MediaRequest right)
     {
-        if (!string.IsNullOrWhiteSpace(left.ProviderId)
-            && string.Equals(left.ProviderId, right.ProviderId, StringComparison.OrdinalIgnoreCase))
+        if (left.ProviderIds.Count > 0 && right.ProviderIds.Count > 0)
         {
-            return true;
+            return left.ProviderIds.Any(pair =>
+                right.ProviderIds.TryGetValue(pair.Key, out var value)
+                && string.Equals(pair.Value, value, StringComparison.OrdinalIgnoreCase));
         }
 
-        return left.ProviderIds.Any(pair =>
-            right.ProviderIds.TryGetValue(pair.Key, out var value)
-            && string.Equals(pair.Value, value, StringComparison.OrdinalIgnoreCase));
+        return !string.IsNullOrWhiteSpace(left.ProviderId)
+            && string.Equals(left.ProviderId, right.ProviderId, StringComparison.OrdinalIgnoreCase);
     }
 
     private static void Normalize(MediaRequest request)
@@ -234,6 +258,7 @@ public sealed class RequestService
         request.RequestedEpisodeNames = (request.RequestedEpisodeNames ?? new List<string>())
             .Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         request.Note = request.Note?.Trim() ?? string.Empty;
+        request.AdminNote = request.AdminNote?.Trim() ?? string.Empty;
         request.MediaQuality = request.MediaQuality?.Trim() ?? string.Empty;
         // "Available" was removed as a status; fold it into "Completed". Blank (very old) -> initial.
         request.Status = string.IsNullOrWhiteSpace(request.Status) ? InitialStatusId

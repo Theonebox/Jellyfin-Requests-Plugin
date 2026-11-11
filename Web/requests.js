@@ -39,12 +39,13 @@
         episodeList: d("#requestsEpisodeList"),
         episodeIds: d("#requestsEpisodeIds"),
         quality: d("#requestsQuality"),
+        qualityDescription: d("#requestsQualityDescription"),
         note: d("#requestsNote"),
         dialogMessage: d("#requestsDialogMessage"),
         submit: d("#requestsDialogSubmit")
     };
 
-    const DEFAULT_QUALITY = ["720p", "1080p", "4K"];
+    const DEFAULT_QUALITY = ["720p", "1080p", "4K"].map((name) => ({ name: name, description: "" }));
     const MAX_SEASONS = 30;
     const EPISODE_PATTERN = /^S\d{1,3}E\d{1,4}$/i;
 
@@ -57,6 +58,7 @@
         // Configured statuses (id -> { name, color }); the first one is the "not processed yet"
         // status in which users may still cancel.
         statuses: new Map(),
+        icons: new Map(), // icon key -> SVG path
         initialStatus: "Pending",
         dialogItem: null,
         lastFocus: null,
@@ -132,9 +134,30 @@
         return type.startsWith("tv") || category === "tvshows";
     }
 
-    function mediaKey(item) {
-        const id = field(item, "providerId") || field(item, "mediaId") || "";
-        return id ? `${isTv(item) ? "tv" : "movie"}:${String(id).toLowerCase()}` : "";
+    // Provider-qualified keys ("movie|tmdb:123"), so a TMDb id never matches an unrelated TVDB id.
+    // Falls back to the bare id for records without a provider id map.
+    function mediaKeys(item) {
+        const kind = isTv(item) ? "tv" : "movie";
+        const ids = Object.entries(field(item, "providerIds") || {})
+            .filter((pair) => pair[1])
+            .map((pair) => `${kind}|${pair[0].toLowerCase()}:${String(pair[1]).toLowerCase()}`);
+        if (ids.length) {
+            return ids;
+        }
+        const id = field(item, "providerId") || field(item, "mediaId");
+        return id ? [`${kind}|:${String(id).toLowerCase()}`] : [];
+    }
+
+    function myStatusFor(item) {
+        // Also try the bare id, which is what requests without a provider id map are stored under.
+        const bare = field(item, "providerId");
+        const keys = mediaKeys(item).concat(bare ? [`${isTv(item) ? "tv" : "movie"}|:${String(bare).toLowerCase()}`] : []);
+        for (const key of keys) {
+            if (state.requested.has(key)) {
+                return state.requested.get(key);
+            }
+        }
+        return undefined;
     }
 
     // Class hook for custom CSS, e.g. .requestsStatus-in-progress.
@@ -184,6 +207,30 @@
         return span;
     }
 
+    // Light, italic text (notes, replies, quality descriptions); the full text shows on hover.
+    function italic(text, className) {
+        const element = document.createElement("em");
+        element.className = className;
+        element.textContent = text;
+        element.title = text;
+        return element;
+    }
+
+    function qualityDescriptionFor(name) {
+        const option = state.quality.find((item) => item.name === name);
+        return option ? option.description : "";
+    }
+
+    // Quality picker in the request dialog, with the selected option's description underneath.
+    function fillQuality() {
+        fillSelect(el.quality, state.quality.map((option) => option.name));
+        showQualityDescription();
+    }
+
+    function showQualityDescription() {
+        el.qualityDescription.textContent = qualityDescriptionFor(el.quality.value);
+    }
+
     function setMessage(element, text, isError) {
         element.textContent = text || "";
         element.classList.toggle("requestsMessage-error", Boolean(isError));
@@ -212,17 +259,22 @@
             // One call for everything the page needs.
             settings = await api("Requests/Configuration/Client");
         } catch (_) {
-            fillSelect(el.quality, state.quality);
+            fillQuality();
             return; // Keep the defaults; the page still works.
         }
 
         const statuses = field(settings, "statusOptions") || [];
-        state.statuses = new Map(statuses.map((option) => [field(option, "id"), { name: field(option, "name"), color: field(option, "color") }]));
+        state.statuses = new Map(statuses.map((option) => [field(option, "id"), { name: field(option, "name"), color: field(option, "color"), icon: field(option, "icon") }]));
+        state.icons = new Map((field(settings, "statusIcons") || []).map((icon) => [field(icon, "key"), field(icon, "path")]));
         state.initialStatus = statuses.length ? field(statuses[0], "id") : "Pending";
 
-        const quality = field(settings, "qualityOptions");
-        state.quality = Array.isArray(quality) && quality.length ? quality : DEFAULT_QUALITY;
-        fillSelect(el.quality, state.quality);
+        const quality = (field(settings, "qualityOptions") || [])
+            .map((option) => (typeof option === "string"
+                ? { name: option, description: "" }
+                : { name: field(option, "name"), description: field(option, "description") || "" }))
+            .filter((option) => option.name);
+        state.quality = quality.length ? quality : DEFAULT_QUALITY;
+        fillQuality();
 
         state.media = { movies: Boolean(field(settings, "movies")), tvShows: Boolean(field(settings, "tvShows")) };
         const types = [
@@ -239,6 +291,9 @@
         const animated = field(settings, "animations") !== false;
         page.classList.toggle("requestsAnimated", animated);
         dialog.classList.toggle("requestsAnimated", animated);
+        if (window.RequestsNavigation && window.RequestsNavigation.setAnimations) {
+            window.RequestsNavigation.setAnimations(animated); // header button bounce
+        }
 
         // Status names/colors may have changed: redraw what's on screen.
         renderMyRequests();
@@ -257,7 +312,7 @@
 
         const fragment = document.createDocumentFragment();
         state.myRequests.forEach(function (request) {
-            const status = field(request, "status") || "Pending";
+            const status = field(request, "status") || state.initialStatus;
             const title = field(request, "title") || "Untitled";
             const year = field(request, "productionYear");
 
@@ -281,17 +336,19 @@
             heading.className = "requestsMine-title";
             heading.textContent = title + (year ? ` (${year})` : "");
 
+            // "TV Show · Season 1, 2 · 4K" plus the quality's optional description in light italics.
             const details = document.createElement("div");
             details.className = "secondaryText";
             details.textContent = [field(request, "mediaType"), scopeLabel(request), field(request, "mediaQuality")]
                 .filter(Boolean).join(" · ");
+            const qualityDescription = qualityDescriptionFor(field(request, "mediaQuality"));
+            if (qualityDescription) {
+                details.append(" ", italic(qualityDescription, "requestsQualityDescription"));
+            }
 
-            // The note the user added, on its own line (full text on hover when it's cut off).
+            // The user's own note (full text on hover when it's cut off).
             const noteText = String(field(request, "note") || "").trim();
-            const note = document.createElement("div");
-            note.className = "secondaryText requestsMine-note";
-            note.textContent = noteText ? `“${noteText}”` : "";
-            note.title = noteText;
+            const note = italic(noteText, "secondaryText requestsMine-note");
             note.hidden = !noteText;
 
             const date = document.createElement("div");
@@ -303,9 +360,15 @@
             footer.className = "requestsMine-footer";
             const badge = document.createElement("span");
             badge.className = `requestsStatusBadge ${statusClass(status)}`;
-            badge.textContent = statusLabel(status);
+            badge.append(svgIcon((state.statuses.get(status) || {}).icon || "bookmark"), document.createTextNode(statusLabel(status)));
             badge.style.color = statusColor(status);
             footer.append(badge);
+
+            // The administrator's reply, right next to the status.
+            const responseText = String(field(request, "adminNote") || "").trim();
+            if (responseText) {
+                footer.append(italic(responseText, "requestsMine-response"));
+            }
 
             // Cancelling is allowed only while the request is still in the first status.
             if (status === state.initialStatus) {
@@ -337,11 +400,13 @@
             state.myRequests = Array.isArray(requests) ? requests : [];
             state.requested.clear();
             state.myRequests.forEach(function (request) {
-                const key = mediaKey(request);
                 // Prefer the "whole item" request's status when a show has several requests.
-                if (key && (!state.requested.has(key) || field(request, "requestScope") === "EntireSeries")) {
-                    state.requested.set(key, field(request, "status") || "Pending");
-                }
+                const whole = field(request, "requestScope") === "EntireSeries";
+                mediaKeys(request).forEach(function (key) {
+                    if (!state.requested.has(key) || whole) {
+                        state.requested.set(key, field(request, "status") || state.initialStatus);
+                    }
+                });
             });
             renderMyRequests();
             refreshCardStates();
@@ -378,7 +443,7 @@
         }
         // Your own request shows its status; someone else's shows "Already requested"
         // (the server reports that as requestStatus on each search result).
-        const mine = state.requested.get(mediaKey(item));
+        const mine = myStatusFor(item);
         const status = mine || field(item, "requestStatus");
         if (status) {
             // Same indicator markup Jellyfin uses for its own card badges (countIndicator gets the
@@ -388,7 +453,7 @@
                 mine: Boolean(mine),
                 status: status,
                 text: mine ? statusLabel(status) : "Already requested",
-                icon: STATUS_ICONS[status] || "bookmark",
+                icon: (state.statuses.get(status) || {}).icon || "bookmark",
                 indicatorClass: "countIndicator requestsIndicator",
                 statusClass: statusClass(status),
                 color: mine ? statusColor(status) : ""
@@ -397,35 +462,24 @@
         return null;
     }
 
-    // Card badge icons as inline SVG (Material icon paths). Jellyfin's icon font only contains
-    // the icons Jellyfin itself uses, so font icons it lacks render as empty boxes.
-    const SVG_PATHS = {
+    // Icon SVG paths by key, delivered with the settings (the administrator picks one per
+    // status). Two built-ins cover "In library" and the moment before settings arrive.
+    const FALLBACK_ICONS = {
         check: "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z",
-        schedule: "M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z",
-        thumbUp: "M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z",
-        sync: "M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z",
-        block: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z",
         bookmark: "M17 3H7c-1.1 0-1.99.9-1.99 2L5 21l7-3 7 3V5c0-1.1-.9-2-2-2z"
     };
 
-    // Built-in statuses get a matching icon; statuses an administrator adds get a bookmark
-    // ("requested").
-    const STATUS_ICONS = {
-        Pending: "schedule",
-        Approved: "thumbUp",
-        InProgress: "sync",
-        Completed: "check",
-        Denied: "block",
-        Cancelled: "block"
-    };
+    function iconPath(key) {
+        return state.icons.get(key) || FALLBACK_ICONS[key] || state.icons.get("bookmark") || FALLBACK_ICONS.bookmark;
+    }
 
-    function svgIcon(name) {
+    function svgIcon(key) {
         const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
         svg.setAttribute("viewBox", "0 0 24 24");
         svg.setAttribute("aria-hidden", "true");
         svg.setAttribute("class", "requestsIcon");
         const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        path.setAttribute("d", SVG_PATHS[name] || SVG_PATHS.bookmark);
+        path.setAttribute("d", iconPath(key));
         svg.append(path);
         return svg;
     }
@@ -622,7 +676,7 @@
             syncScopeVisibility();
         }
 
-        fillSelect(el.quality, state.quality);
+        fillQuality();
         el.note.value = "";
 
         // Movies: one request, and nothing to request once it's in the library.
@@ -764,6 +818,7 @@
         }
     });
     el.submit.addEventListener("click", submitRequest);
+    el.quality.addEventListener("change", showQualityDescription);
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !dialog.hidden) {

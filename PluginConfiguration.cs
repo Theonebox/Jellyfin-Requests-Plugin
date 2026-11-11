@@ -12,6 +12,13 @@ public class PluginConfiguration : BasePluginConfiguration
 {
     public static readonly string[] DefaultQualityOptions = { "720p", "1080p", "4K" };
 
+    /// <summary>Quality options with descriptions, in display order.</summary>
+    public QualityOption[] QualityOptions { get; set; } = Array.Empty<QualityOption>();
+
+    /// <summary>
+    /// Quality names as stored before descriptions existed (1.0.0.74 and earlier). Read as a fallback
+    /// when <see cref="QualityOptions"/> is empty, and kept in sync so older versions still load.
+    /// </summary>
     public string[] MediaQualityOptions { get; set; } = DefaultQualityOptions;
 
     /// <summary>
@@ -30,15 +37,41 @@ public class PluginConfiguration : BasePluginConfiguration
     // Ids match the values older versions stored, so existing requests keep their status.
     public static StatusOption[] DefaultStatusOptions() => new[]
     {
-        new StatusOption("Pending", "Pending", "#bdbdbd"),
-        new StatusOption("Approved", "Approved", "#66bb6a"),
-        new StatusOption("Denied", "Denied", "#ef5350"),
-        new StatusOption("InProgress", "In Progress", "#ffa726"),
-        new StatusOption("Completed", "Completed", "#42a5f5"),
-        new StatusOption("Cancelled", "Cancelled", "#ef5350")
+        new StatusOption("Pending", "Pending", "#bdbdbd", "schedule"),
+        new StatusOption("Approved", "Approved", "#66bb6a", "thumbUp"),
+        new StatusOption("Denied", "Denied", "#ef5350", "block"),
+        new StatusOption("InProgress", "In Progress", "#ffa726", "sync"),
+        new StatusOption("Completed", "Completed", "#42a5f5", "check"),
+        new StatusOption("Cancelled", "Cancelled", "#ef5350", "close")
     };
 
-    /// <summary>The configured statuses, or the defaults if none are saved.</summary>
+    /// <summary>The configured quality options (migrating names-only settings), or the defaults.</summary>
+    public QualityOption[] GetQualityOptions()
+    {
+        if (QualityOptions is { Length: > 0 })
+        {
+            return QualityOptions;
+        }
+
+        var names = MediaQualityOptions is { Length: > 0 } ? MediaQualityOptions : DefaultQualityOptions;
+        return names.Select(name => new QualityOption(name, string.Empty)).ToArray();
+    }
+
+    /// <summary>
+    /// The configured statuses, or the defaults if none are saved. Statuses saved without a valid
+    /// icon (e.g. by a version before icons were configurable) get their default icon.
+    /// </summary>
     public StatusOption[] GetStatusOptions()
-        => StatusOptions is { Length: > 0 } ? StatusOptions : DefaultStatusOptions();
+    {
+        var options = StatusOptions is { Length: > 0 } ? StatusOptions : DefaultStatusOptions();
+        foreach (var option in options)
+        {
+            if (!StatusIcons.IsValid(option.Icon))
+            {
+                option.Icon = StatusIcons.DefaultFor(option.Id);
+            }
+        }
+
+        return options;
+    }
 }

@@ -332,16 +332,51 @@
     background-color: color-mix(in srgb, currentColor 12%, transparent);
     font-size: .85em;
     white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: .35em;
+}
+
+.requestsStatusBadge .requestsIcon {
+    width: 1.15em;
+    height: 1.15em;
+    fill: currentColor;
+    flex-shrink: 0;
 }
 
 /* Status colors come from the administrator's Status Options (set inline). Custom CSS can still
    target .requestsStatus-<id>, e.g. .requestsStatus-in-progress. */
 
-.requestsMine-note {
+/* Notes, admin replies and quality descriptions: light italics, one line, full text on hover. */
+.requestsMine-note,
+.requestsMine-response {
+    display: block;
     overflow: hidden;
     font-style: italic;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.requestsMine-response {
+    flex: 1 1 auto;
+    min-width: 0;
+    opacity: .85;
+}
+
+.requestsQualityDescription {
+    font-style: italic;
+    opacity: .6;
+}
+
+.requestsDialog-qualityDescription {
+    display: block;
+    min-height: 1.2em;
+    margin: -1em 0 1.25em;
+    font-size: .9em;
+}
+
+.requestsDialog-qualityDescription:empty {
+    display: none;
 }
 
 /* ---------- dialog (Jellyfin formDialog markup) ---------- */

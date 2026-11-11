@@ -123,20 +123,61 @@ public sealed class MetadataIdentifyService
             }
         }
 
-        // Fallback: same title + year from different providers.
-        for (var i = 0; i < results.Count; i++)
+        // A title match must never put two different ids from the same provider into one result
+        // (two TMDb entries are by definition different titles), even through a chain.
+        bool WouldConflict(int a, int b)
         {
-            for (var j = i + 1; j < results.Count; j++)
+            var (rootA, rootB) = (Find(a), Find(b));
+            var ids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < results.Count; i++)
             {
-                var (a, b) = (results[i], results[j]);
-                if (a.MediaCategory == b.MediaCategory
-                    && a.ProductionYear is not null && a.ProductionYear == b.ProductionYear
-                    && !string.Equals(a.SourceProvider, b.SourceProvider, StringComparison.OrdinalIgnoreCase)
-                    && NormalizeTitle(a.Name) == NormalizeTitle(b.Name))
+                var root = Find(i);
+                if (root != rootA && root != rootB)
                 {
-                    Union(i, j);
+                    continue;
+                }
+
+                foreach (var (provider, id) in results[i].ProviderIds)
+                {
+                    if (ids.TryGetValue(provider, out var existing) && !string.Equals(existing, id, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+
+                    ids[provider] = id;
                 }
             }
+
+            return false;
+        }
+
+        // Fallback: same type + year + title from different providers. Grouped by key first, so
+        // titles are normalised once and only results that can match are compared.
+        var byTitle = new Dictionary<string, List<int>>(StringComparer.Ordinal);
+        for (var index = 0; index < results.Count; index++)
+        {
+            var result = results[index];
+            if (result.ProductionYear is null)
+            {
+                continue;
+            }
+
+            var key = $"{result.MediaCategory}|{result.ProductionYear}|{NormalizeTitle(result.Name)}";
+            if (!byTitle.TryGetValue(key, out var group))
+            {
+                byTitle[key] = group = new List<int>();
+            }
+
+            foreach (var other in group)
+            {
+                if (!string.Equals(results[other].SourceProvider, result.SourceProvider, StringComparison.OrdinalIgnoreCase)
+                    && !WouldConflict(other, index))
+                {
+                    Union(other, index);
+                }
+            }
+
+            group.Add(index);
         }
 
         var merged = new List<MetadataSearchResult>();

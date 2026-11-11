@@ -17,6 +17,8 @@ namespace Jellyfin.Plugin.Requests.Controllers;
 [Route("Requests")]
 public sealed class RequestController : ControllerBase
 {
+    private const int MaxNoteLength = 1000;
+
     private readonly RequestService _requests;
     private readonly IUserManager _userManager;
 
@@ -81,6 +83,11 @@ public sealed class RequestController : ControllerBase
         if (userId is null || string.IsNullOrWhiteSpace(userName))
         {
             return Unauthorized(new { error = "Jellyfin authentication is required to submit a request." });
+        }
+
+        if ((model.Note?.Length ?? 0) > MaxNoteLength)
+        {
+            return BadRequest(new { error = $"Notes can be at most {MaxNoteLength} characters." });
         }
 
         var category = model.MediaCategory
@@ -150,6 +157,25 @@ public sealed class RequestController : ControllerBase
         }
 
         return _requests.Delete(id) ? NoContent() : NotFound();
+    }
+
+    /// <summary>Administrator reply shown to the requester in My Requests. Empty clears it.</summary>
+    [HttpPut("{id:guid}/response")]
+    public ActionResult<MediaRequest> UpdateResponse(Guid id, [FromBody] ResponseModel model)
+    {
+        if (!User.IsAdministrator())
+        {
+            return Forbidden("Administrator access is required.");
+        }
+
+        var note = model?.Note ?? string.Empty;
+        if (note.Length > MaxNoteLength)
+        {
+            return BadRequest(new { error = $"Responses can be at most {MaxNoteLength} characters." });
+        }
+
+        var updated = _requests.UpdateAdminNote(id, note);
+        return updated is null ? NotFound() : Ok(updated);
     }
 
     [HttpPut("{id:guid}/status")]
@@ -243,4 +269,10 @@ public sealed class UpdateStatusModel
 {
     [JsonPropertyName("status")]
     public string? Status { get; set; }
+}
+
+public sealed class ResponseModel
+{
+    [JsonPropertyName("note")]
+    public string? Note { get; set; }
 }

@@ -32,6 +32,7 @@ public sealed partial class ConfigurationController : ControllerBase
             movies = configuration?.EnableMovies ?? true,
             tvShows = configuration?.EnableTvShows ?? true,
             statusOptions = configuration?.GetStatusOptions() ?? PluginConfiguration.DefaultStatusOptions(),
+            statusIcons = StatusIcons.All,
             animations = configuration?.EnableAnimations ?? true
         });
     }
@@ -48,8 +49,10 @@ public sealed partial class ConfigurationController : ControllerBase
         return Save(configuration => configuration.EnableAnimations = enabled, new { enabled });
     }
 
-    private static string[] QualityOptions()
-        => Clean(Configuration?.MediaQualityOptions) is { Length: > 0 } options ? options : PluginConfiguration.DefaultQualityOptions;
+    private static QualityOption[] QualityOptions()
+        => Clean(Configuration?.GetQualityOptions()) is { Length: > 0 } options
+            ? options
+            : PluginConfiguration.DefaultQualityOptions.Select(name => new QualityOption(name, string.Empty)).ToArray();
 
     [HttpPut("QualityOptions")]
     public IActionResult UpdateQualityOptions([FromBody] QualityOptionsModel model)
@@ -65,7 +68,13 @@ public sealed partial class ConfigurationController : ControllerBase
             return BadRequest(new { error = "At least one media quality option is required." });
         }
 
-        return Save(configuration => configuration.MediaQualityOptions = options, new { options });
+        return Save(
+            configuration =>
+            {
+                configuration.QualityOptions = options;
+                configuration.MediaQualityOptions = options.Select(option => option.Name).ToArray();
+            },
+            new { options });
     }
 
     [HttpPut("MediaOptions")]
@@ -140,7 +149,8 @@ public sealed partial class ConfigurationController : ControllerBase
             }
 
             var color = HexColorRegex().IsMatch(option.Color ?? string.Empty) ? option.Color! : "#bdbdbd";
-            options.Add(new StatusOption(id, name, color.ToLowerInvariant()));
+            var icon = StatusIcons.IsValid(option.Icon) ? option.Icon : StatusIcons.DefaultFor(id);
+            options.Add(new StatusOption(id, name, color.ToLowerInvariant(), icon));
         }
 
         if (options.Count == 0)
@@ -152,11 +162,12 @@ public sealed partial class ConfigurationController : ControllerBase
         return Save(configuration => configuration.StatusOptions = result, new { options = result });
     }
 
-    private static string[] Clean(IEnumerable<string>? options)
-        => (options ?? Array.Empty<string>())
-            .Where(option => !string.IsNullOrWhiteSpace(option))
-            .Select(option => option.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+    // Trims, drops blank names and duplicate names (case-insensitive), keeping order.
+    private static QualityOption[] Clean(IEnumerable<QualityOption>? options)
+        => (options ?? Array.Empty<QualityOption>())
+            .Where(option => !string.IsNullOrWhiteSpace(option?.Name))
+            .Select(option => new QualityOption(option.Name.Trim(), option.Description?.Trim() ?? string.Empty))
+            .DistinctBy(option => option.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
     private IActionResult Save(Action<PluginConfiguration> apply, object result)
@@ -183,7 +194,7 @@ public sealed partial class ConfigurationController : ControllerBase
 public sealed class QualityOptionsModel
 {
     [JsonPropertyName("options")]
-    public List<string>? Options { get; set; }
+    public List<QualityOption>? Options { get; set; }
 }
 
 public sealed class MediaOptionsModel

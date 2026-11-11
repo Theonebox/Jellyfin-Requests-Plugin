@@ -42,12 +42,12 @@
                 </div>
 
                 <h3 class="requests-config-section-title">Media Quality Options</h3>
-                <p class="fieldDescription">Quality choices offered to users when they submit a request. Changes save automatically.</p>
+                <p class="fieldDescription">Quality choices offered to users when they submit a request, in the order shown (use the arrows to reorder). Changes save automatically.</p>
                 <div id="requestsQualityOptions"></div>
                 <button type="button" is="emby-button" class="raised emby-button requests-quality-add" id="requestsQualityAdd">Add Quality Option</button>
 
                 <h3 class="requests-config-section-title">Status Options</h3>
-                <p class="fieldDescription">Statuses you can give a request, with the color they're shown in. The first status is given to new requests, and users can cancel a request only while it's still in that status. Renaming a status keeps existing requests on it. Changes save automatically.</p>
+                <p class="fieldDescription">Statuses you can give a request, each with its own color and icon. The <strong>first</strong> status is given to new requests, and users can cancel a request only while it's still in that status, so reorder with care. Renaming a status keeps existing requests on it. Changes save automatically.</p>
                 <div id="requestsStatusOptions"></div>
                 <button type="button" is="emby-button" class="raised emby-button requests-quality-add" id="requestsStatusAdd">Add Status</button>
 
@@ -77,12 +77,27 @@
                     <table class="requests-admin-table">
                         <thead><tr>
                             <th>Poster</th><th>Title</th><th>Requested By</th>
-                            <th>Request Date</th><th>Scope</th><th>Quality</th><th>Notes</th><th>Status</th><th></th>
+                            <th>Requested</th><th>Quality</th><th>Notes</th><th>Response</th><th>Status</th><th></th>
                         </tr></thead>
                         <tbody id="requestsAdminRows"></tbody>
                     </table>
                 </div>
             </section>
+        </div>
+    </div>
+
+    <div id="requestsResponseDialog" class="requests-admin-modal" hidden role="dialog" aria-modal="true" aria-labelledby="requestsResponseTitle">
+        <div class="requests-admin-modal-backdrop" data-close-response></div>
+        <div class="requests-admin-modal-panel">
+            <h3 id="requestsResponseTitle">Reply</h3>
+            <p id="requestsResponseFor" class="fieldDescription"></p>
+            <textarea id="requestsResponseText" class="requests-response-text" rows="4" maxlength="1000" placeholder="e.g. Denied: this isn't available in 4K yet." aria-label="Reply"></textarea>
+            <div id="requestsResponseMessage" class="fieldDescription requests-config-message" role="status" aria-live="polite"></div>
+            <div class="requests-response-actions">
+                <button id="requestsResponseClear" type="button" is="emby-button" class="raised emby-button">Remove reply</button>
+                <button type="button" is="emby-button" class="raised emby-button" data-close-response>Cancel</button>
+                <button id="requestsResponseSave" type="button" is="emby-button" class="raised button-submit emby-button">Save reply</button>
+            </div>
         </div>
     </div>
 
@@ -115,6 +130,13 @@
             background: #292929; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; color: inherit; font: inherit; padding: .5em .65em;
         }
         .requestsConfigPage .requests-quality-row input { flex: 1; }
+        .requestsConfigPage .requests-quality-row .requests-quality-name { flex: 1 1 8em; }
+        .requestsConfigPage .requests-quality-row .requests-quality-description { flex: 2 1 12em; font-style: italic; }
+        .requestsConfigPage .requests-response-text { box-sizing: border-box; width: 100%; padding: .6em; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; background: #292929; color: inherit; font: inherit; resize: vertical; }
+        .requestsConfigPage .requests-response-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5em; margin-top: .5em; }
+        .requestsConfigPage .requests-response-actions .emby-button { margin: 0; }
+        .requestsConfigPage .requests-response-button { margin: 0; white-space: nowrap; }
+        .requestsConfigPage .requests-response-button.requests-response-sent { border: 1px solid #00a4dc; }
         .requestsConfigPage .requests-quality-add { margin-top: .5em; }
         .requestsConfigPage .requests-admin-toolbar { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-bottom: .5em; }
         .requestsConfigPage .requests-admin-toolbar input { flex: 1 1 16em; }
@@ -133,5 +155,21 @@
         .requestsConfigPage .requests-status-select option, .requestsConfigPage #requestsAdminStatus option { background-color: #292929; }
         .requestsConfigPage .requests-status-row input[type="text"] { flex: 1; font-weight: 600; }
         .requestsConfigPage .requests-status-row .requests-status-color { flex: 0 0 2.75em; width: 2.75em; height: 2.4em; padding: .15em; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; background: transparent; cursor: pointer; }
+        .requestsConfigPage .requests-move-buttons { display: flex; flex: 0 0 auto; gap: .2em; }
+        .requestsConfigPage .requests-move-button, .requestsConfigPage .requests-icon-button, .requestsConfigPage .requests-icon-choice {
+            display: inline-flex; align-items: center; justify-content: center; width: 2.4em; height: 2.4em; padding: 0;
+            border: 1px solid rgba(255,255,255,.15); border-radius: .2em; background: rgba(255,255,255,.04); color: inherit; cursor: pointer;
+            transition: background-color .15s ease, border-color .15s ease;
+        }
+        .requestsConfigPage .requests-move-button:hover:not(:disabled), .requestsConfigPage .requests-icon-button:hover, .requestsConfigPage .requests-icon-choice:hover { background: rgba(255,255,255,.12); }
+        .requestsConfigPage .requests-move-button:disabled { opacity: .3; cursor: default; }
+        .requestsConfigPage .requests-icon-svg { width: 1.4em; height: 1.4em; fill: currentColor; pointer-events: none; }
+        .requestsConfigPage .requests-icon-picker { position: relative; flex: 0 0 auto; }
+        .requestsConfigPage .requests-icon-menu {
+            position: absolute; top: calc(100% + .35em); right: 0; z-index: 20; display: grid; grid-template-columns: repeat(5, 2.4em); gap: .3em;
+            padding: .5em; border: 1px solid rgba(255,255,255,.15); border-radius: .3em; background: #202020; box-shadow: 0 .5em 1.5em rgba(0,0,0,.5);
+        }
+        .requestsConfigPage .requests-icon-menu[hidden] { display: none; }
+        .requestsConfigPage .requests-icon-choice.is-selected { border-color: #00a4dc; background: rgba(0,164,220,.18); }
     </style>
 </div>
