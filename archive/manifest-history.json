@@ -8,6 +8,14 @@
         "category": "General",
         "versions": [
             {
+                "version": "1.0.0.75",
+                "changelog": "Pick an icon for each status and reorder quality and status options; administrators can reply to a request (shown to the requester next to the status); optional descriptions for quality options; notes shown in italics; movies no longer show a scope and dates show without the time in the admin table; the header button picks up your theme's button style and bounces on hover (follows the Animations setting); plugin logo and description; fixes requests and results from different providers with the same ID number being treated as the same title; server-side note length limits.",
+                "targetAbi": "12.4.0",
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.0.0.75/Requests_1.0.0.75.zip",
+                "checksum": "bf19f86647beadfb094a22f0f04fb5b4",
+                "timestamp": "2026-11-11T22:00:00Z"
+            },
+            {
                 "version": "1.0.0.73",
                 "changelog": "Search results for the same title now merge across providers (linked through your library's IDs, or same title and year); custom statuses get a proper icon and all badge icons render reliably; subtle animations with an on/off switch under General > Appearance; faster page loads and less background work; \"colour\" is now \"color\".",
                 "targetAbi": "12.4.0",
