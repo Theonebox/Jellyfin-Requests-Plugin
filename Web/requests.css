@@ -679,3 +679,74 @@
         transform: scale(.97);
     }
 }
+
+/* ---------- media type chips (3+ types enabled) ---------- */
+
+.requestsSearch-chips {
+    display: flex;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    gap: .5em;
+}
+
+.requestsSearch-chips[hidden] {
+    display: none;
+}
+
+.requestsTypeChip {
+    padding: .4em 1em;
+    border: .07em solid rgba(128, 128, 128, .45);
+    border-radius: 2em;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    opacity: .7;
+}
+
+.requestsTypeChip[aria-pressed="true"] {
+    border-color: currentColor;
+    background-color: rgba(128, 128, 128, .2);
+    opacity: 1;
+}
+
+.requestsTypeChip[aria-pressed="true"]::before {
+    content: "✓ ";
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .requestsAnimated .requestsTypeChip {
+        transition: background-color .15s ease, opacity .15s ease, transform .12s ease;
+    }
+
+    .requestsAnimated .requestsTypeChip:active {
+        transform: scale(.96);
+    }
+}
+
+/* Album covers are square in the dialog too. */
+.requestsDialog .requestsDialog-poster.requestsDialog-poster-square {
+    height: 7.5em;
+}
+
+/* Square album cards next to portrait posters (fallback when Jellyfin's card CSS isn't loaded). */
+:where(.requestsResults .cardPadder-square) {
+    padding-bottom: 100%;
+}
+
+/* ---------- trending (in place of results while nothing is searched) ---------- */
+
+.requestsTrending[hidden] {
+    display: none;
+}
+
+.requestsTrending-section + .requestsTrending-section {
+    margin-top: 1.5em;
+}
+
+.requestsTrending-title {
+    margin: .25em 0 .25em .6em;
+    font-size: 1.1em;
+    font-weight: 600;
+    opacity: .85;
+}

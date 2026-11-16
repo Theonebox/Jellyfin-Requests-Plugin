@@ -22,10 +22,14 @@
                 <button id="requestsSearchButton" type="submit" class="raised button-submit emby-button requestsSearch-button">
                     <span>Search</span>
                 </button>
+                <!-- Shown instead of the Type dropdown when 3+ media types are enabled (multi-select). -->
+                <div id="requestsTypeChips" class="requestsSearch-chips" role="group" aria-label="Media types to search" hidden></div>
             </form>
 
             <div id="requestsStatus" class="fieldDescription requestsMessage" role="status" aria-live="polite"></div>
             <div id="requestsResults" class="itemsContainer vertical-wrap requestsResults"></div>
+            <!-- Trending (optional, TMDB): fills the results area while nothing is searched. -->
+            <div id="requestsTrending" class="requestsTrending" hidden></div>
         </div>
 
         <div class="verticalSection requestsMine">

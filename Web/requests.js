@@ -25,9 +25,12 @@
         input: $("#requestsSearchInput"),
         type: $("#requestsMediaType"),
         typeContainer: $(".requestsSearch-type"),
+        typeChips: $("#requestsTypeChips"),
+        typeChips: $("#requestsTypeChips"),
         searchButton: $("#requestsSearchButton"),
         status: $("#requestsStatus"),
         results: $("#requestsResults"),
+        trending: $("#requestsTrending"),
         myStatus: $("#requestsMyStatus"),
         myList: $("#requestsMyList"),
         dialogTitle: d("#requestsDialogTitle"),
@@ -51,10 +54,11 @@
 
     const state = {
         results: [],
+        trending: [], // trending titles (TMDB), shown while nothing is searched
         myRequests: [],
         requested: new Map(), // mediaKey -> status
         quality: DEFAULT_QUALITY,
-        media: { movies: true, tvShows: true },
+        media: { movie: true, tv: true, music: true },
         // Configured statuses (id -> { name, color }); the first one is the "not processed yet"
         // status in which users may still cancel.
         statuses: new Map(),
@@ -128,16 +132,30 @@
 
     // ---------- helpers ----------
 
-    function isTv(item) {
-        const type = String(field(item, "mediaType") || "").toLowerCase();
+    // The requestable kinds: label, placeholder icon, and the values the server expects.
+    const KINDS = {
+        movie: { label: "Movie", icon: "movie", category: "Movies", type: "Movie", search: "Movies", plural: "movies" },
+        tv: { label: "TV Show", icon: "tv", category: "TVShows", type: "TV Show", search: "TV Shows", plural: "TV shows" },
+        music: { label: "Album", icon: "album", category: "Music", type: "Album", search: "Music", plural: "music" }
+    };
+
+    function mediaKind(item) {
         const category = String(field(item, "mediaCategory") || "").toLowerCase();
-        return type.startsWith("tv") || category === "tvshows";
+        const type = String(field(item, "mediaType") || "").toLowerCase();
+        if (category === "music" || type === "album") {
+            return "music";
+        }
+        return category === "tvshows" || type.startsWith("tv") ? "tv" : "movie";
+    }
+
+    function isTv(item) {
+        return mediaKind(item) === "tv";
     }
 
     // Provider-qualified keys ("movie|tmdb:123"), so a TMDb id never matches an unrelated TVDB id.
     // Falls back to the bare id for records without a provider id map.
     function mediaKeys(item) {
-        const kind = isTv(item) ? "tv" : "movie";
+        const kind = mediaKind(item);
         const ids = Object.entries(field(item, "providerIds") || {})
             .filter((pair) => pair[1])
             .map((pair) => `${kind}|${pair[0].toLowerCase()}:${String(pair[1]).toLowerCase()}`);
@@ -151,7 +169,7 @@
     function myStatusFor(item) {
         // Also try the bare id, which is what requests without a provider id map are stored under.
         const bare = field(item, "providerId");
-        const keys = mediaKeys(item).concat(bare ? [`${isTv(item) ? "tv" : "movie"}|:${String(bare).toLowerCase()}`] : []);
+        const keys = mediaKeys(item).concat(bare ? [`${mediaKind(item)}|:${String(bare).toLowerCase()}`] : []);
         for (const key of keys) {
             if (state.requested.has(key)) {
                 return state.requested.get(key);
@@ -253,6 +271,47 @@
         }
     }
 
+    // Media type picker: hidden with one enabled type, a dropdown (with "All") for two, and
+    // multi-select chips for three or more, so users can combine e.g. movies + TV but not music.
+    function enabledKinds() {
+        return Object.keys(KINDS).filter((kind) => state.media[kind]);
+    }
+
+    function renderTypePicker() {
+        const kinds = enabledKinds();
+        const chipsMode = kinds.length >= 3;
+        el.typeContainer.hidden = kinds.length <= 1 || chipsMode;
+        el.typeChips.hidden = !chipsMode;
+
+        if (chipsMode) {
+            const previous = new Set(Array.from(el.typeChips.querySelectorAll("[aria-pressed=true]")).map((chip) => chip.dataset.kind));
+            el.typeChips.replaceChildren(...kinds.map(function (kind) {
+                const chip = document.createElement("button");
+                chip.type = "button";
+                chip.className = "requestsTypeChip";
+                chip.dataset.kind = kind;
+                chip.textContent = KINDS[kind].search;
+                chip.setAttribute("aria-pressed", String(previous.size ? previous.has(kind) : true));
+                return chip;
+            }));
+        } else {
+            fillSelect(el.type, (kinds.length > 1 ? ["All"] : []).concat(kinds.map((kind) => KINDS[kind].search)));
+        }
+
+        const names = kinds.map((kind) => KINDS[kind].plural);
+        $("label[for=requestsSearchInput]").textContent = "Search " + (names.length > 1
+            ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1]
+            : names[0] || "media");
+    }
+
+    // The value sent as ?mediaType=: one type, "All", or a comma-separated list from the chips.
+    function selectedTypes() {
+        if (!el.typeChips.hidden) {
+            return Array.from(el.typeChips.querySelectorAll("[aria-pressed=true]")).map((chip) => KINDS[chip.dataset.kind].search).join(",");
+        }
+        return el.type.value || "All";
+    }
+
     async function loadSettings() {
         let settings;
         try {
@@ -276,16 +335,12 @@
         state.quality = quality.length ? quality : DEFAULT_QUALITY;
         fillQuality();
 
-        state.media = { movies: Boolean(field(settings, "movies")), tvShows: Boolean(field(settings, "tvShows")) };
-        const types = [
-            state.media.movies && state.media.tvShows && "All",
-            state.media.movies && "Movies",
-            state.media.tvShows && "TV Shows"
-        ].filter(Boolean);
-        fillSelect(el.type, types);
-        el.typeContainer.hidden = types.length <= 1; // Only one type enabled: nothing to choose.
-        $("label[for=requestsSearchInput]").textContent = types.length > 1 ? "Search movies and TV shows"
-            : state.media.movies ? "Search movies" : "Search TV shows";
+        state.media = {
+            movie: Boolean(field(settings, "movies")),
+            tv: Boolean(field(settings, "tvShows")),
+            music: field(settings, "music") !== false
+        };
+        renderTypePicker();
 
         // Animations are pure CSS behind one class; reduced-motion users never get them (see CSS).
         const animated = field(settings, "animations") !== false;
@@ -326,7 +381,7 @@
             if (posterUrl) {
                 poster.style.backgroundImage = cssUrl(posterUrl);
             } else {
-                poster.append(icon(isTv(request) ? "tv" : "movie"));
+                poster.append(icon(KINDS[mediaKind(request)].icon));
             }
 
             const body = document.createElement("div");
@@ -336,15 +391,12 @@
             heading.className = "requestsMine-title";
             heading.textContent = title + (year ? ` (${year})` : "");
 
-            // "TV Show · Season 1, 2 · 4K" plus the quality's optional description in light italics.
+            // "TV Show · Season 1, 2 · 4K" / "Album · Artist".
             const details = document.createElement("div");
             details.className = "secondaryText";
-            details.textContent = [field(request, "mediaType"), scopeLabel(request), field(request, "mediaQuality")]
+            // Quality title only; its description is shown when choosing a quality, not here.
+            details.textContent = [field(request, "mediaType"), field(request, "artist"), scopeLabel(request), field(request, "mediaQuality")]
                 .filter(Boolean).join(" · ");
-            const qualityDescription = qualityDescriptionFor(field(request, "mediaQuality"));
-            if (qualityDescription) {
-                details.append(" ", italic(qualityDescription, "requestsQualityDescription"));
-            }
 
             // The user's own note (full text on hover when it's cut off).
             const noteText = String(field(request, "note") || "").trim();
@@ -503,18 +555,92 @@
     }
 
     function refreshCardStates() {
-        el.results.querySelectorAll(".requestsCard").forEach(function (card) {
-            const item = state.results[Number(card.dataset.index)];
-            if (item) {
-                updateCard(card, item);
-            }
+        [[el.results, state.results], [el.trending, state.trending]].forEach(function ([container, items]) {
+            container.querySelectorAll(".requestsCard").forEach(function (card) {
+                const item = items[Number(card.dataset.index)];
+                if (item) {
+                    updateCard(card, item);
+                }
+            });
         });
+    }
+
+    // ---------- trending (shown in place of results while nothing is searched) ----------
+
+    const TRENDING_REFRESH_MS = 10 * 60 * 1000; // the server caches TMDB for an hour anyway
+    let trendingLoadedAt = 0;
+
+    function renderTrending(movies, tvShows) {
+        state.trending = movies.concat(tvShows);
+        const fragment = document.createDocumentFragment();
+        let index = 0;
+        [["Trending movies", movies], ["Trending TV shows", tvShows]].forEach(function ([title, items]) {
+            if (!items.length) {
+                return;
+            }
+            const section = document.createElement("div");
+            section.className = "requestsTrending-section";
+            const heading = document.createElement("h3");
+            heading.className = "requestsTrending-title";
+            heading.textContent = title;
+            const row = document.createElement("div");
+            row.className = "itemsContainer vertical-wrap requestsResults";
+            items.forEach(function (item) {
+                row.append(renderCard(item, index++));
+            });
+            section.append(heading, row);
+            fragment.append(section);
+        });
+        el.trending.replaceChildren(fragment);
+    }
+
+    async function loadTrending(force) {
+        if (!force && Date.now() - trendingLoadedAt < TRENDING_REFRESH_MS) {
+            return;
+        }
+        trendingLoadedAt = Date.now();
+        try {
+            const data = await api("Requests/Trending");
+            if (!field(data, "enabled")) {
+                state.trending = [];
+                el.trending.replaceChildren();
+            } else {
+                renderTrending(field(data, "movies") || [], field(data, "tvShows") || []);
+            }
+        } catch (_) {
+            trendingLoadedAt = 0; // try again next time the page opens
+        }
+        showIdleState();
+    }
+
+    // Nothing searched: no results or status, trending (if any) in their place.
+    function showIdleState() {
+        if (el.input.value.trim()) {
+            return;
+        }
+        el.results.replaceChildren();
+        el.trending.hidden = state.trending.length === 0;
+    }
+
+    // Every time the page opens it starts fresh: empty search box, trending instead of old results.
+    function resetSearch() {
+        if (state.searchController) {
+            state.searchController.abort();
+            state.searchController = null;
+        }
+        el.searchButton.disabled = false;
+        el.input.value = "";
+        state.results = [];
+        setMessage(el.status, "");
+        showIdleState();
     }
 
     function renderCard(item, index) {
         const card = document.createElement("button");
         card.type = "button";
-        card.className = "card portraitCard card-hoverable requestsCard";
+        const music = mediaKind(item) === "music";
+        // Album covers are square; movie/TV posters portrait (Jellyfin's own card shapes).
+        card.className = `card ${music ? "squareCard" : "portraitCard"} card-hoverable requestsCard`;
         card.dataset.index = String(index);
         card.style.setProperty("--i", String(Math.min(index, 12))); // entrance stagger (CSS, capped)
         const year = field(item, "productionYear");
@@ -526,7 +652,7 @@
         const scalable = document.createElement("div");
         scalable.className = "cardScalable";
         const padder = document.createElement("div");
-        padder.className = "cardPadder cardPadder-portrait";
+        padder.className = `cardPadder ${music ? "cardPadder-square" : "cardPadder-portrait"}`;
         const image = document.createElement("div");
         const poster = field(item, "posterUrl");
         if (poster) {
@@ -543,7 +669,7 @@
             image.append(img);
         } else {
             image.className = `cardImageContainer coveredImage cardContent defaultCardBackground defaultCardBackground${(index % 5) + 1}`;
-            image.append(icon(isTv(item) ? "tv" : "movie", "cardImageIcon"));
+            image.append(icon(KINDS[mediaKind(item)].icon, "cardImageIcon"));
         }
         const indicators = document.createElement("div");
         indicators.className = "cardIndicators";
@@ -557,7 +683,7 @@
 
         const secondary = document.createElement("div");
         secondary.className = "cardText cardTextCentered cardText-secondary";
-        secondary.textContent = [year, isTv(item) ? "TV Show" : "Movie"].filter(Boolean).join(" · ");
+        secondary.textContent = [year, KINDS[mediaKind(item)].label, field(item, "artist")].filter(Boolean).join(" · ");
 
         const stateLine = document.createElement("div");
         stateLine.className = "cardText cardTextCentered cardText-secondary requestsCard-state";
@@ -592,11 +718,12 @@
 
         setMessage(el.status, "Searching...");
         el.searchButton.disabled = true;
+        el.trending.hidden = true; // results take trending's place
         showSkeletons();
 
         try {
             const results = await api(
-                `Requests/Search?query=${encodeURIComponent(query)}&mediaType=${encodeURIComponent(el.type.value || "All")}`,
+                `Requests/Search?query=${encodeURIComponent(query)}&mediaType=${encodeURIComponent(selectedTypes())}`,
                 { signal: controller.signal });
             state.results = Array.isArray(results) ? results : [];
 
@@ -656,12 +783,17 @@
     function openDialog(item, trigger) {
         state.dialogItem = item;
         state.lastFocus = trigger || document.activeElement;
-        const tv = isTv(item);
+        const kind = mediaKind(item);
+        const tv = kind === "tv";
         const year = field(item, "productionYear");
         const current = cardState(item);
 
         el.dialogTitle.textContent = (field(item, "name") || "Request") + (year ? ` (${year})` : "");
-        el.dialogMeta.textContent = [tv ? "TV Show" : "Movie", field(item, "sourceProvider")].filter(Boolean).join(" · ");
+        el.dialogMeta.textContent = [KINDS[kind].label, field(item, "artist"), field(item, "sourceProvider")].filter(Boolean).join(" · ");
+        el.dialogPoster.classList.toggle("requestsDialog-poster-square", kind === "music");
+        // Video qualities (720p, 4K, ...) don't apply to albums.
+        el.quality.closest(".selectContainer").hidden = kind === "music";
+        el.qualityDescription.hidden = kind === "music";
         el.dialogOverview.textContent = field(item, "overview") || "No overview available.";
 
         const poster = field(item, "posterUrl");
@@ -679,15 +811,16 @@
         fillQuality();
         el.note.value = "";
 
-        // Movies: one request, and nothing to request once it's in the library.
+        // Movies and albums: one request, and nothing to request once in the library.
         // TV shows: still allow requests for missing seasons/episodes.
         let blocked = "";
         let note = "";
         const who = current && current.mine ? "You already requested" : "Someone already requested";
+        const noun = kind === "music" ? "album" : "movie";
         if (current && !tv) {
             blocked = current.inLibrary
-                ? "This movie is already in the library."
-                : `${who} this movie (${statusLabel(current.status)}).`;
+                ? `This ${noun} is already in the library.`
+                : `${who} this ${noun} (${statusLabel(current.status)}).`;
         } else if (current && tv) {
             note = current.inLibrary
                 ? "This show is already in the library. You can still request missing seasons or episodes."
@@ -698,7 +831,7 @@
         setButtonText(el.submit, "Submit Request");
 
         dialog.hidden = false;
-        (tv ? dialog.querySelector('input[name="requestsTvScope"]:checked') : el.quality).focus();
+        (tv ? dialog.querySelector('input[name="requestsTvScope"]:checked') : kind === "music" ? el.note : el.quality).focus();
     }
 
     function closeDialog() {
@@ -713,8 +846,9 @@
     }
 
     function buildPayload(item) {
-        const tv = isTv(item);
-        const scope = tv ? selectedScope() : "EntireMovie";
+        const kind = mediaKind(item);
+        const tv = kind === "tv";
+        const scope = tv ? selectedScope() : kind === "music" ? "EntireAlbum" : "EntireMovie";
         const seasons = scope === "SeasonSelection"
             ? Array.from(el.seasonList.querySelectorAll("input:checked")).map((box) => Number(box.value))
             : [];
@@ -738,20 +872,21 @@
         return {
             mediaId: field(item, "providerId") || "",
             title: field(item, "name") || "",
-            mediaType: tv ? "TV Show" : "Movie",
+            mediaType: KINDS[kind].type,
             overview: field(item, "overview") || "",
             posterUrl: field(item, "posterUrl") || "",
             providerId: field(item, "providerId") || "",
             providerIds: field(item, "providerIds") || {},
             productionYear: field(item, "productionYear") || null,
             sourceProvider: field(item, "sourceProvider") || "",
-            mediaCategory: tv ? "TVShows" : "Movies",
+            mediaCategory: KINDS[kind].category,
+            artist: field(item, "artist") || "",
             requestScope: scope,
             requestedSeasonNumbers: seasons,
             requestedEpisodeIds: episodes,
             requestedEpisodeNames: episodes,
             note: el.note.value.trim(),
-            mediaQuality: el.quality.value || ""
+            mediaQuality: kind === "music" ? "" : el.quality.value || ""
         };
     }
 
@@ -798,12 +933,21 @@
         }
     });
 
-    // One delegated listener for every result card.
-    el.results.addEventListener("click", function (event) {
-        const card = event.target instanceof Element ? event.target.closest(".requestsCard") : null;
-        const item = card && state.results[Number(card.dataset.index)];
-        if (item) {
-            openDialog(item, card);
+    // One delegated listener per card container (search results and trending).
+    [[el.results, () => state.results], [el.trending, () => state.trending]].forEach(function ([container, items]) {
+        container.addEventListener("click", function (event) {
+            const card = event.target instanceof Element ? event.target.closest(".requestsCard") : null;
+            const item = card && items()[Number(card.dataset.index)];
+            if (item) {
+                openDialog(item, card);
+            }
+        });
+    });
+
+    // Clearing the search box brings trending back.
+    el.input.addEventListener("input", function () {
+        if (!el.input.value.trim()) {
+            resetSearch();
         }
     });
 
@@ -819,6 +963,19 @@
     });
     el.submit.addEventListener("click", submitRequest);
     el.quality.addEventListener("change", showQualityDescription);
+
+    // Type chips toggle on click; the last selected one can't be switched off.
+    el.typeChips.addEventListener("click", function (event) {
+        const chip = event.target instanceof Element ? event.target.closest(".requestsTypeChip") : null;
+        if (!chip) {
+            return;
+        }
+        const pressed = chip.getAttribute("aria-pressed") === "true";
+        if (pressed && el.typeChips.querySelectorAll("[aria-pressed=true]").length === 1) {
+            return;
+        }
+        chip.setAttribute("aria-pressed", String(!pressed));
+    });
 
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !dialog.hidden) {
@@ -854,16 +1011,16 @@
     function show() {
         window.requestAnimationFrame(alignSearchControls);
         window.setTimeout(alignSearchControls, 250);
+        resetSearch();
         // Cheap refresh so admin setting changes and status updates show up when reopening.
         const now = Date.now();
         if (now - lastRefresh > 5000) {
             lastRefresh = now;
             loadSettings();
             loadMyRequests();
+            loadTrending(false);
         }
-        if (!el.input.value) {
-            el.input.focus({ preventScroll: true });
-        }
+        el.input.focus({ preventScroll: true });
     }
 
     window.RequestsPage = {

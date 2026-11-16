@@ -1,6 +1,7 @@
 using Jellyfin.Data.Enums;
 using Jellyfin.Plugin.Requests.Models;
 using MediaBrowser.Controller.Entities;
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
@@ -8,9 +9,9 @@ using MediaBrowser.Controller.Library;
 namespace Jellyfin.Plugin.Requests.Services;
 
 /// <summary>
-/// In-memory index of the provider ids of every movie and series in the library, used to mark
+/// In-memory index of the provider ids of every movie, series and album in the library, used to mark
 /// search results "In library" and to recognise different search results as the same title.
-/// Keys are type- and provider-qualified ("movie|tmdb:123"), so a TMDb id can't match an
+/// Keys are type- and provider-qualified ("Movies|tmdb:123"), so a TMDb id can't match an
 /// unrelated TVDB id and a movie can't match a series that shares a TMDb number.
 /// Built by <see cref="LibraryAvailabilityTask"/> and kept current from library events.
 /// </summary>
@@ -39,7 +40,7 @@ public sealed class LibraryAvailabilityService
         var query = new InternalItemsQuery
         {
             Recursive = true,
-            IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series }
+            IncludeItemTypes = new[] { BaseItemKind.Movie, BaseItemKind.Series, BaseItemKind.MusicAlbum }
         };
 
         foreach (var item in _libraryManager.GetItemList(query))
@@ -57,12 +58,11 @@ public sealed class LibraryAvailabilityService
     /// <summary>The library movie/series that has any of these provider ids, if any.</summary>
     public Guid? FindItem(MediaCategory category, IReadOnlyDictionary<string, string> providerIds)
     {
-        var isSeries = category == MediaCategory.TVShows;
         lock (_syncRoot)
         {
             foreach (var (provider, id) in providerIds)
             {
-                if (!string.IsNullOrWhiteSpace(id) && _itemByKey.TryGetValue(Key(isSeries, provider, id), out var itemId))
+                if (!string.IsNullOrWhiteSpace(id) && _itemByKey.TryGetValue(Key(category, provider, id), out var itemId))
                 {
                     return itemId;
                 }
@@ -83,7 +83,7 @@ public sealed class LibraryAvailabilityService
 
     private void OnItemChanged(object? sender, ItemChangeEventArgs e)
     {
-        if (e.Item is Movie or Series)
+        if (CategoryOf(e.Item) is not null)
         {
             lock (_syncRoot)
             {
@@ -95,7 +95,7 @@ public sealed class LibraryAvailabilityService
 
     private void OnItemRemoved(object? sender, ItemChangeEventArgs e)
     {
-        if (e.Item is Movie or Series)
+        if (CategoryOf(e.Item) is not null)
         {
             lock (_syncRoot)
             {
@@ -110,7 +110,7 @@ public sealed class LibraryAvailabilityService
         {
             foreach (var (provider, id) in entry.Ids)
             {
-                _itemByKey.Remove(Key(entry.IsSeries, provider, id));
+                _itemByKey.Remove(Key(entry.Category, provider, id));
             }
         }
     }
@@ -125,16 +125,24 @@ public sealed class LibraryAvailabilityService
             return;
         }
 
-        var entry = new Entry(item is Series, ids);
+        var entry = new Entry(CategoryOf(item)!.Value, ids);
         entries[item.Id] = entry;
         foreach (var (provider, id) in ids)
         {
-            itemByKey[Key(entry.IsSeries, provider, id)] = item.Id;
+            itemByKey[Key(entry.Category, provider, id)] = item.Id;
         }
     }
 
-    private static string Key(bool isSeries, string provider, string id)
-        => (isSeries ? "tv|" : "movie|") + provider.Trim() + ":" + id.Trim();
+    private static MediaCategory? CategoryOf(BaseItem item) => item switch
+    {
+        Movie => MediaCategory.Movies,
+        Series => MediaCategory.TVShows,
+        MusicAlbum => MediaCategory.Music,
+        _ => null
+    };
 
-    private sealed record Entry(bool IsSeries, Dictionary<string, string> Ids);
+    private static string Key(MediaCategory category, string provider, string id)
+        => category + "|" + provider.Trim() + ":" + id.Trim();
+
+    private sealed record Entry(MediaCategory Category, Dictionary<string, string> Ids);
 }

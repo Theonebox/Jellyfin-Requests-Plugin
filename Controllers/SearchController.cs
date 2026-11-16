@@ -17,7 +17,7 @@ public sealed class SearchController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<MetadataSearchResult>>> Search(
         [FromQuery] string query,
-        [FromQuery] string mediaType = "Movies",
+        [FromQuery] string mediaType = "All",
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
@@ -27,36 +27,19 @@ public sealed class SearchController : ControllerBase
 
         try
         {
-            var category = mediaType.Equals("TV Shows", StringComparison.OrdinalIgnoreCase)
-                || mediaType.Equals("TVShows", StringComparison.OrdinalIgnoreCase)
-                || mediaType.Equals("TV", StringComparison.OrdinalIgnoreCase)
-                ? MediaCategory.TVShows
-                : mediaType.Equals("All", StringComparison.OrdinalIgnoreCase)
-                    ? MediaCategory.All
-                    : MediaCategory.Movies;
-
+            // mediaType is one type or a comma-separated list ("Movies,TV Shows"); "All" means every
+            // enabled type. Types the administrator has disabled are never searched.
             var configuration = Plugin.Instance?.Configuration;
-            if (configuration is not null)
+            var categories = ParseCategories(mediaType)
+                .Where(category => configuration?.IsEnabled(category) ?? true)
+                .ToHashSet();
+            if (categories.Count == 0)
             {
-                // Never search a media type the administrator has disabled.
-                MediaCategory? allowed = (category, configuration.EnableMovies, configuration.EnableTvShows) switch
-                {
-                    (MediaCategory.All, true, true) => MediaCategory.All,
-                    (MediaCategory.All, true, false) or (MediaCategory.Movies, true, _) => MediaCategory.Movies,
-                    (MediaCategory.All, false, true) or (MediaCategory.TVShows, _, true) => MediaCategory.TVShows,
-                    _ => null
-                };
-
-                if (allowed is null)
-                {
-                    return BadRequest(new { error = "Requests for this media type are currently disabled." });
-                }
-
-                category = allowed.Value;
+                return BadRequest(new { error = "Requests for this media type are currently disabled." });
             }
 
             var results = await MetadataIdentify
-                .SearchAsync(query, category, cancellationToken)
+                .SearchAsync(query, categories, cancellationToken)
                 .ConfigureAwait(false);
 
             // "In library" is resolved while merging; add existing requests (by anyone) so the page
@@ -75,6 +58,30 @@ public sealed class SearchController : ControllerBase
             or NotSupportedException)
         {
             return StatusCode(502, new { error = "Jellyfin metadata providers could not complete the search." });
+        }
+    }
+
+    private static IEnumerable<MediaCategory> ParseCategories(string? mediaType)
+    {
+        foreach (var part in (mediaType ?? "All").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            switch (part.Replace(" ", string.Empty).ToLowerInvariant())
+            {
+                case "all":
+                    yield return MediaCategory.Movies;
+                    yield return MediaCategory.TVShows;
+                    yield return MediaCategory.Music;
+                    break;
+                case "movies" or "movie":
+                    yield return MediaCategory.Movies;
+                    break;
+                case "tvshows" or "tv":
+                    yield return MediaCategory.TVShows;
+                    break;
+                case "music" or "albums" or "album":
+                    yield return MediaCategory.Music;
+                    break;
+            }
         }
     }
 

@@ -90,12 +90,11 @@ public sealed class RequestController : ControllerBase
             return BadRequest(new { error = $"Notes can be at most {MaxNoteLength} characters." });
         }
 
-        var category = model.MediaCategory
-            ?? (model.MediaType?.StartsWith("TV", StringComparison.OrdinalIgnoreCase) == true ? MediaCategory.TVShows : MediaCategory.Movies);
+        var category = model.MediaCategory is MediaCategory.Movies or MediaCategory.TVShows or MediaCategory.Music
+            ? model.MediaCategory.Value
+            : RequestService.CategoryFromMediaType(model.MediaType);
         var configuration = Plugin.Instance?.Configuration;
-        if (configuration is not null
-            && ((category == MediaCategory.Movies && !configuration.EnableMovies)
-                || (category == MediaCategory.TVShows && !configuration.EnableTvShows)))
+        if (configuration is not null && !configuration.IsEnabled(category))
         {
             return BadRequest(new { error = "Requests for this media type are currently disabled." });
         }
@@ -106,15 +105,16 @@ public sealed class RequestController : ControllerBase
             UserName = userName,
             MediaId = model.MediaId?.Trim() ?? string.Empty,
             Title = model.Title.Trim(),
-            MediaType = category == MediaCategory.TVShows ? "TV Show" : "Movie",
+            MediaType = RequestService.MediaTypeLabel(category),
             Overview = model.Overview?.Trim() ?? string.Empty,
             PosterUrl = model.PosterUrl?.Trim() ?? string.Empty,
             ProviderId = model.ProviderId?.Trim() ?? string.Empty,
             ProviderIds = model.ProviderIds ?? new Dictionary<string, string>(),
             ProductionYear = model.ProductionYear,
             SourceProvider = model.SourceProvider?.Trim() ?? string.Empty,
+            Artist = model.Artist?.Trim() ?? string.Empty,
             MediaCategory = category,
-            RequestScope = model.RequestScope ?? (category == MediaCategory.TVShows ? RequestScope.EntireSeries : RequestScope.EntireMovie),
+            RequestScope = model.RequestScope ?? RequestScope.EntireMovie, // corrected per category by RequestService
             RequestedSeasonNumbers = model.RequestedSeasonNumbers ?? new List<int>(),
             RequestedEpisodeIds = model.RequestedEpisodeIds ?? new List<string>(),
             RequestedEpisodeNames = model.RequestedEpisodeNames ?? new List<string>(),
@@ -242,6 +242,9 @@ public sealed class CreateRequestModel
 
     [JsonPropertyName("sourceProvider")]
     public string? SourceProvider { get; set; }
+
+    [JsonPropertyName("artist")]
+    public string? Artist { get; set; }
 
     [JsonPropertyName("mediaCategory")]
     public MediaCategory? MediaCategory { get; set; }

@@ -25,6 +25,10 @@ public sealed class MetadataSearchResult
     [JsonPropertyName("sourceProvider")]
     public string SourceProvider { get; set; } = string.Empty;
 
+    /// <summary>Album artist, for music results.</summary>
+    [JsonPropertyName("artist")]
+    public string Artist { get; set; } = string.Empty;
+
     [JsonPropertyName("providerIds")]
     public Dictionary<string, string> ProviderIds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 

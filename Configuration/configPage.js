@@ -109,7 +109,8 @@ export default function (view, params) {
         icons: [], // [{ key, label, path }] the icons a status can use (from the server)
         descending: true,
         generalLoaded: false,
-        isAdministrator: null
+        isAdministrator: null,
+        tmdbKeySet: false
     };
 
     function setMessage(selector, text, isError) {
@@ -450,25 +451,23 @@ export default function (view, params) {
     }
 
     async function saveMediaOptions(changed) {
-        const movies = $("#requestsEnableMovies");
-        const tvShows = $("#requestsEnableTvShows");
-        if (!movies.checked && !tvShows.checked) {
+        const boxes = ["#requestsEnableMovies", "#requestsEnableTvShows", "#requestsEnableMusic"].map((id) => $(id));
+        const [movies, tvShows, music] = boxes;
+        if (!boxes.some((box) => box.checked)) {
             changed.checked = true;
             setMessage("#requestsGeneralMessage", "At least one media type must remain enabled.", true);
             return;
         }
 
-        movies.disabled = true;
-        tvShows.disabled = true;
+        boxes.forEach((box) => { box.disabled = true; });
         try {
-            await api("Requests/Configuration/MediaOptions", "PUT", { movies: movies.checked, tvShows: tvShows.checked });
+            await api("Requests/Configuration/MediaOptions", "PUT", { movies: movies.checked, tvShows: tvShows.checked, music: music.checked });
             setMessage("#requestsGeneralMessage", "Media options saved.");
         } catch (error) {
             changed.checked = !changed.checked;
             setMessage("#requestsGeneralMessage", error.message, true);
         } finally {
-            movies.disabled = false;
-            tvShows.disabled = false;
+            boxes.forEach((box) => { box.disabled = false; });
         }
     }
 
@@ -492,9 +491,11 @@ export default function (view, params) {
             renderQualityOptions();
             $("#requestsEnableMovies").checked = Boolean(value(s, "movies"));
             $("#requestsEnableTvShows").checked = Boolean(value(s, "tvShows"));
+            $("#requestsEnableMusic").checked = value(s, "music") !== false;
             $("#requestsEnableAnimations").checked = value(s, "animations") !== false;
+            showTrendingSettings(Boolean(value(s, "trendingEnabled")), Boolean(value(s, "tmdbKeySet")));
         } else {
-            ["#requestsEnableMovies", "#requestsEnableTvShows", "#requestsEnableAnimations"].forEach((id) => { $(id).disabled = true; });
+            ["#requestsEnableMovies", "#requestsEnableTvShows", "#requestsEnableMusic", "#requestsEnableAnimations"].forEach((id) => { $(id).disabled = true; });
             $("#requestsQualityOptions").textContent = settings.error.message;
             $("#requestsStatusOptions").textContent = settings.error.message;
         }
@@ -517,6 +518,40 @@ export default function (view, params) {
             $("#requestsGeneralProviderStatus").textContent = sources.length ? `${status} (${sources.join(", ")})` : status;
         } else {
             $("#requestsGeneralProviderStatus").textContent = providers.error.message;
+        }
+    }
+
+    // ---------- Trending (TMDB) ----------
+
+    function showTrendingSettings(enabled, keySet) {
+        state.tmdbKeySet = keySet;
+        $("#requestsEnableTrending").checked = enabled;
+        $("#requestsTmdbKey").value = "";
+        $("#requestsTmdbKey").placeholder = keySet ? "Key saved (enter a new one to replace it)" : "TMDB API key";
+        $("#requestsTmdbKeyRemove").hidden = !keySet;
+    }
+
+    // apiKey: undefined keeps the saved key, "" removes it, otherwise a new key (checked by the server).
+    async function saveTrending(apiKey) {
+        const controls = ["#requestsEnableTrending", "#requestsTmdbKey", "#requestsTmdbKeySave", "#requestsTmdbKeyRemove"].map((id) => $(id));
+        const enabled = $("#requestsEnableTrending").checked;
+        if (enabled && !state.tmdbKeySet && !apiKey) {
+            $("#requestsEnableTrending").checked = false; // nothing was saved
+            setMessage("#requestsGeneralMessage", "Add a TMDB API key to show trending.", true);
+            $("#requestsTmdbKey").focus();
+            return;
+        }
+
+        controls.forEach((control) => { control.disabled = true; });
+        setMessage("#requestsGeneralMessage", apiKey ? "Checking the key with TMDB..." : "");
+        try {
+            const result = await api("Requests/Trending/Settings", "PUT", { enabled: enabled, apiKey: apiKey });
+            showTrendingSettings(Boolean(value(result, "enabled")), Boolean(value(result, "keySet")));
+            setMessage("#requestsGeneralMessage", apiKey === "" ? "TMDB key removed." : apiKey ? "TMDB key saved." : `Trending ${enabled ? "on" : "off"}.`);
+        } catch (error) {
+            setMessage("#requestsGeneralMessage", error.message, true);
+        } finally {
+            controls.forEach((control) => { control.disabled = false; });
         }
     }
 
@@ -556,7 +591,7 @@ export default function (view, params) {
             ["Year", year],
             ["Requester", value(request, "userName")],
             ["Request Date", formatDate(value(request, "requestedAtUtc"))],
-            ["Media Type", [value(request, "mediaType"), scopeLabel(request)].filter(Boolean).join(" · ")],
+            ["Media Type", [value(request, "mediaType"), value(request, "artist"), scopeLabel(request)].filter(Boolean).join(" · ")],
             ["Quality", value(request, "mediaQuality")],
             ["Status", statusLabel(value(request, "status"))],
             ["Status History", history],
@@ -643,7 +678,7 @@ export default function (view, params) {
             `<td>${posterUrl ? `<img src="${escapeHtml(posterUrl)}" alt="" loading="lazy">` : ""}</td>`
             + `<td><button type="button" class="requests-admin-title" data-details>${escapeHtml(value(request, "title") || "Untitled")}</button>`
             // Type, plus what was requested for TV (seasons/episodes); movies need no scope.
-            + `<div class="fieldDescription">${escapeHtml([value(request, "mediaType"), scopeLabel(request)].filter(Boolean).join(" · "))}</div></td>`
+            + `<div class="fieldDescription">${escapeHtml([value(request, "mediaType"), value(request, "artist"), scopeLabel(request)].filter(Boolean).join(" · "))}</div></td>`
             + `<td>${escapeHtml(value(request, "userName") || "Unknown")}</td>`
             + `<td>${escapeHtml(formatDate(value(request, "requestedAtUtc")))}</td>`
             + `<td>${escapeHtml(value(request, "mediaQuality") || "")}</td>`
@@ -810,7 +845,29 @@ export default function (view, params) {
 
     $("#requestsEnableMovies").addEventListener("change", function () { saveMediaOptions(this); });
     $("#requestsEnableTvShows").addEventListener("change", function () { saveMediaOptions(this); });
+    $("#requestsEnableMusic").addEventListener("change", function () { saveMediaOptions(this); });
     $("#requestsEnableAnimations").addEventListener("change", function () { saveAnimations(this); });
+    $("#requestsEnableTrending").addEventListener("change", () => saveTrending(undefined));
+    $("#requestsTmdbKeySave").addEventListener("click", function () {
+        const key = $("#requestsTmdbKey").value.trim();
+        if (key) {
+            saveTrending(key);
+        } else {
+            setMessage("#requestsGeneralMessage", "Enter a TMDB API key first.", true);
+        }
+    });
+    $("#requestsTmdbKey").addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            event.preventDefault();
+            $("#requestsTmdbKeySave").click();
+        }
+    });
+    $("#requestsTmdbKeyRemove").addEventListener("click", function () {
+        if (window.confirm("Remove the saved TMDB key? Trending will stop showing.")) {
+            $("#requestsEnableTrending").checked = false;
+            saveTrending("");
+        }
+    });
 
     view.addEventListener("viewshow", async function () {
         showLoading(true);

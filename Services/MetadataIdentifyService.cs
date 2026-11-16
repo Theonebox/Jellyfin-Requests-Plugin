@@ -1,3 +1,4 @@
+using MediaBrowser.Controller.Entities.Audio;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Providers;
@@ -17,48 +18,40 @@ public sealed class MetadataIdentifyService
         _library = library;
     }
 
+    /// <summary>Searches the requested media types in parallel through Jellyfin's metadata providers.</summary>
     public async Task<IReadOnlyList<MetadataSearchResult>> SearchAsync(
         string query,
-        MediaCategory category = MediaCategory.All,
+        IReadOnlyCollection<MediaCategory> categories,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(query))
+        if (string.IsNullOrWhiteSpace(query) || categories.Count == 0)
         {
             return Array.Empty<MetadataSearchResult>();
         }
 
-        var searchMovies = category is MediaCategory.All or MediaCategory.Movies;
-        var searchTv = category is MediaCategory.All or MediaCategory.TVShows;
+        var name = query.Trim();
+        var empty = Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
 
-        Task<IEnumerable<RemoteSearchResult>> movieTask = searchMovies
+        var movieTask = categories.Contains(MediaCategory.Movies)
             ? _providerManager.GetRemoteSearchResults<Movie, MovieInfo>(
-            new RemoteSearchQuery<MovieInfo>
-            {
-                SearchInfo = new MovieInfo { Name = query.Trim() }
-            },
-            cancellationToken)
-            : Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
-
-        Task<IEnumerable<RemoteSearchResult>> tvTask = searchTv
+                new RemoteSearchQuery<MovieInfo> { SearchInfo = new MovieInfo { Name = name } }, cancellationToken)
+            : empty;
+        var tvTask = categories.Contains(MediaCategory.TVShows)
             ? _providerManager.GetRemoteSearchResults<Series, SeriesInfo>(
-            new RemoteSearchQuery<SeriesInfo>
-            {
-                SearchInfo = new SeriesInfo { Name = query.Trim() }
-            },
-            cancellationToken)
-            : Task.FromResult<IEnumerable<RemoteSearchResult>>(Array.Empty<RemoteSearchResult>());
+                new RemoteSearchQuery<SeriesInfo> { SearchInfo = new SeriesInfo { Name = name } }, cancellationToken)
+            : empty;
+        // Albums, through the built-in MusicBrainz provider (and any other music providers installed).
+        var musicTask = categories.Contains(MediaCategory.Music)
+            ? _providerManager.GetRemoteSearchResults<MusicAlbum, AlbumInfo>(
+                new RemoteSearchQuery<AlbumInfo> { SearchInfo = new AlbumInfo { Name = name } }, cancellationToken)
+            : empty;
 
-        await Task.WhenAll(movieTask, tvTask).ConfigureAwait(false);
+        await Task.WhenAll(movieTask, tvTask, musicTask).ConfigureAwait(false);
 
         var results = new List<MetadataSearchResult>();
-        if (searchMovies)
-        {
-            AppendResults(results, movieTask.Result, "Movie", MediaCategory.Movies);
-        }
-        if (searchTv)
-        {
-            AppendResults(results, tvTask.Result, "TV", MediaCategory.TVShows);
-        }
+        AppendResults(results, movieTask.Result, "Movie", MediaCategory.Movies);
+        AppendResults(results, tvTask.Result, "TV", MediaCategory.TVShows);
+        AppendResults(results, musicTask.Result, "Album", MediaCategory.Music);
 
         return MergeDuplicates(results, _library);
     }
@@ -228,7 +221,7 @@ public sealed class MetadataIdentifyService
                 }
             }
 
-            result.ProviderId = GetProviderId(result.ProviderIds, "Tmdb", "Imdb", "Tvdb");
+            result.ProviderId = GetProviderId(result.ProviderIds, PreferredIds);
         }
 
         return merged;
@@ -263,7 +256,7 @@ public sealed class MetadataIdentifyService
             }
 
             var providerIds = result.ProviderIds ?? new Dictionary<string, string>();
-            var providerId = GetProviderId(providerIds, "Tmdb", "Imdb", "Tvdb");
+            var providerId = GetProviderId(providerIds, PreferredIds);
             destination.Add(new MetadataSearchResult
             {
                 ProviderId = providerId,
@@ -274,10 +267,14 @@ public sealed class MetadataIdentifyService
                 ProductionYear = result.ProductionYear,
                 SourceProvider = result.SearchProviderName ?? string.Empty,
                 ProviderIds = new Dictionary<string, string>(providerIds, StringComparer.OrdinalIgnoreCase),
-                MediaCategory = category
+                MediaCategory = category,
+                Artist = result.AlbumArtist?.Name ?? result.Artists?.FirstOrDefault()?.Name ?? string.Empty
             });
         }
     }
+
+    // Which id represents a result, in order of preference (music: MusicBrainz release group).
+    private static readonly string[] PreferredIds = { "Tmdb", "Imdb", "Tvdb", "MusicBrainzReleaseGroup", "MusicBrainzAlbum" };
 
     private static string GetProviderId(
         IReadOnlyDictionary<string, string> providerIds,

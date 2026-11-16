@@ -5,5 +5,6 @@ public enum RequestScope
     EntireMovie,
     EntireSeries,
     SeasonSelection,
-    EpisodeSelection
+    EpisodeSelection,
+    EntireAlbum
 }

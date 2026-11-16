@@ -11,5 +11,6 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
     public void RegisterServices(IServiceCollection serviceCollection, IServerApplicationHost applicationHost)
     {
         serviceCollection.AddSingleton<IStartupFilter, NavigationStartupFilter>();
+        serviceCollection.AddSingleton<TrendingService>();
     }
 }

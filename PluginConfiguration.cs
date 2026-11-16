@@ -31,8 +31,19 @@ public class PluginConfiguration : BasePluginConfiguration
 
     public bool EnableTvShows { get; set; } = true;
 
+    public bool EnableMusic { get; set; } = true;
+
     /// <summary>Subtle motion on the Requests page (fades, card hover). Purely CSS; off = no motion at all.</summary>
     public bool EnableAnimations { get; set; } = true;
+
+    /// <summary>Show trending movies/TV (from TMDB) on the Requests page when nothing is searched.</summary>
+    public bool EnableTrending { get; set; }
+
+    /// <summary>
+    /// The administrator's own TMDB API key (v3 key or v4 read access token), used only for
+    /// trending. Never sent to browsers.
+    /// </summary>
+    public string TmdbApiKey { get; set; } = string.Empty;
 
     // Ids match the values older versions stored, so existing requests keep their status.
     public static StatusOption[] DefaultStatusOptions() => new[]
@@ -43,6 +54,14 @@ public class PluginConfiguration : BasePluginConfiguration
         new StatusOption("InProgress", "In Progress", "#ffa726", "sync"),
         new StatusOption("Completed", "Completed", "#42a5f5", "check"),
         new StatusOption("Cancelled", "Cancelled", "#ef5350", "close")
+    };
+
+    public bool IsEnabled(MediaCategory category) => category switch
+    {
+        MediaCategory.Movies => EnableMovies,
+        MediaCategory.TVShows => EnableTvShows,
+        MediaCategory.Music => EnableMusic,
+        _ => false
     };
 
     /// <summary>The configured quality options (migrating names-only settings), or the defaults.</summary>

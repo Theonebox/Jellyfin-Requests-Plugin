@@ -24,6 +24,9 @@ public sealed class MediaRequest
 
     public string SourceProvider { get; set; } = string.Empty;
 
+    /// <summary>Album artist, for music requests.</summary>
+    public string Artist { get; set; } = string.Empty;
+
     public int? ProductionYear { get; set; }
 
     public MediaCategory MediaCategory { get; set; } = MediaCategory.All;

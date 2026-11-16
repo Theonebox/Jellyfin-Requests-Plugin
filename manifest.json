@@ -2,19 +2,19 @@
     {
         "guid": "6a5a5b44-639d-4f8a-934f-7aeb03475f91",
         "name": "Requests",
-        "description": "Let users request movies and TV shows, and manage every request from the dashboard.",
-        "overview": "Adds a Requests button to the Jellyfin header so every user can search for movies and TV shows, using the metadata providers you already have, and request them: a whole movie or series, specific seasons or episodes, with a preferred quality and a note. Titles you already own are marked In library, and duplicates are flagged. Administrators manage all requests from the dashboard, with customizable statuses (name, color and icon), quality options and media types. No external services or API keys needed.",
+        "description": "Let users request movies, TV shows and music, and manage every request from the dashboard.",
+        "overview": "Adds a Requests button to the Jellyfin header so every user can search for movies, TV shows and albums, using the metadata providers you already have, and request them: a whole movie, series or album, or specific seasons and episodes, with a preferred quality and a note. Titles you already own are marked In library and duplicates are flagged. Optionally shows trending movies and TV shows (with your own TMDB key). Administrators manage all requests from the dashboard, reply to users, and customize statuses (name, color and icon), quality options and media types.",
         "owner": "Theonebox",
         "category": "General",
         "imageUrl": "https://raw.githubusercontent.com/Theonebox/Jellyfin-Requests-Plugin/main/images/banner.png",
         "versions": [
             {
-                "version": "1.1.0.0",
-                "changelog": "Requests 1.1: request movies and TV shows (whole, by season or by episode) from a header button, with quality and notes; admin replies, customizable statuses (name, color, icon), quality descriptions, merged search results, In library and Already requested markers, theme-aware styling and optional animations.",
+                "version": "1.2.0.0",
+                "changelog": "Music: search and request albums (MusicBrainz), with multi-select type chips when movies, TV and music are all enabled. Optional trending movies and TV shows (your own TMDB key) shown while nothing is searched. The Requests page now always opens with an empty search. My Requests shows just the quality name.",
                 "targetAbi": "12.4.0",
-                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.1/Requests_1.1.0.0.zip",
-                "checksum": "04eb0053309778efc40e407be88f11cf",
-                "timestamp": "2026-11-12T00:00:00Z"
+                "sourceUrl": "https://github.com/Theonebox/Jellyfin-Requests-Plugin/releases/download/v1.2/Requests_1.2.0.0.zip",
+                "checksum": "5a4ae1ef21ffee12f3e96fec2d7f821c",
+                "timestamp": "2026-11-16T12:00:00Z"
             }
         ]
     }

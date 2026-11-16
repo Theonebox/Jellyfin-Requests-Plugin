@@ -31,9 +31,13 @@ public sealed partial class ConfigurationController : ControllerBase
             qualityOptions = QualityOptions(),
             movies = configuration?.EnableMovies ?? true,
             tvShows = configuration?.EnableTvShows ?? true,
+            music = configuration?.EnableMusic ?? true,
             statusOptions = configuration?.GetStatusOptions() ?? PluginConfiguration.DefaultStatusOptions(),
             statusIcons = StatusIcons.All,
-            animations = configuration?.EnableAnimations ?? true
+            animations = configuration?.EnableAnimations ?? true,
+            // Whether a TMDB key is saved, never the key itself.
+            trendingEnabled = configuration?.EnableTrending ?? false,
+            tmdbKeySet = !string.IsNullOrWhiteSpace(configuration?.TmdbApiKey)
         });
     }
 
@@ -85,7 +89,7 @@ public sealed partial class ConfigurationController : ControllerBase
             return Forbidden();
         }
 
-        if (model is null || (!model.Movies && !model.TvShows))
+        if (model is null || (!model.Movies && !model.TvShows && !(model.Music ?? false)))
         {
             return BadRequest(new { error = "At least one media type must remain enabled." });
         }
@@ -95,8 +99,12 @@ public sealed partial class ConfigurationController : ControllerBase
             {
                 configuration.EnableMovies = model.Movies;
                 configuration.EnableTvShows = model.TvShows;
+                if (model.Music is { } music)
+                {
+                    configuration.EnableMusic = music; // optional, so older clients don't switch it off
+                }
             },
-            new { movies = model.Movies, tvShows = model.TvShows });
+            new { movies = model.Movies, tvShows = model.TvShows, music = Configuration?.EnableMusic });
     }
 
     [HttpGet("Diagnostics")]
@@ -204,6 +212,9 @@ public sealed class MediaOptionsModel
 
     [JsonPropertyName("tvShows")]
     public bool TvShows { get; set; }
+
+    [JsonPropertyName("music")]
+    public bool? Music { get; set; }
 }
 
 public sealed class StatusOptionsModel

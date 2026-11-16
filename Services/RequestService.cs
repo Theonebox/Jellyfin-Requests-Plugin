@@ -152,7 +152,7 @@ public sealed class RequestService
                 return null;
             }
 
-            var whole = matches.FirstOrDefault(request => request.RequestScope is RequestScope.EntireMovie or RequestScope.EntireSeries);
+            var whole = matches.FirstOrDefault(request => request.RequestScope is RequestScope.EntireMovie or RequestScope.EntireSeries or RequestScope.EntireAlbum);
             return (whole ?? matches[0]).Status;
         }
     }
@@ -210,7 +210,7 @@ public sealed class RequestService
 
             var duplicate = candidate.RequestScope switch
             {
-                RequestScope.EntireMovie or RequestScope.EntireSeries => request.RequestScope == candidate.RequestScope,
+                RequestScope.EntireMovie or RequestScope.EntireSeries or RequestScope.EntireAlbum => request.RequestScope == candidate.RequestScope,
                 RequestScope.SeasonSelection => request.RequestScope == RequestScope.SeasonSelection
                     && request.RequestedSeasonNumbers.Intersect(candidate.RequestedSeasonNumbers).Any(),
                 RequestScope.EpisodeSelection => request.RequestScope == RequestScope.EpisodeSelection
@@ -272,23 +272,34 @@ public sealed class RequestService
 
         if (request.MediaCategory == MediaCategory.All)
         {
-            request.MediaCategory = request.MediaType.StartsWith("TV", StringComparison.OrdinalIgnoreCase)
-                ? MediaCategory.TVShows
-                : MediaCategory.Movies;
+            request.MediaCategory = CategoryFromMediaType(request.MediaType);
         }
 
-        if (request.MediaCategory == MediaCategory.TVShows)
+        // Scope follows the type: series may be whole or partial; movies and albums are whole.
+        request.RequestScope = request.MediaCategory switch
         {
-            if (request.RequestScope == RequestScope.EntireMovie)
-            {
-                request.RequestScope = RequestScope.EntireSeries;
-            }
-        }
-        else
-        {
-            request.RequestScope = RequestScope.EntireMovie;
-        }
+            MediaCategory.TVShows => request.RequestScope is RequestScope.SeasonSelection or RequestScope.EpisodeSelection
+                ? request.RequestScope
+                : RequestScope.EntireSeries,
+            MediaCategory.Music => RequestScope.EntireAlbum,
+            _ => RequestScope.EntireMovie
+        };
+        request.Artist = request.Artist?.Trim() ?? string.Empty;
     }
+
+    public static MediaCategory CategoryFromMediaType(string? mediaType) => (mediaType ?? string.Empty).Trim().ToLowerInvariant() switch
+    {
+        var type when type.StartsWith("tv", StringComparison.Ordinal) => MediaCategory.TVShows,
+        "album" or "music" => MediaCategory.Music,
+        _ => MediaCategory.Movies
+    };
+
+    public static string MediaTypeLabel(MediaCategory category) => category switch
+    {
+        MediaCategory.TVShows => "TV Show",
+        MediaCategory.Music => "Album",
+        _ => "Movie"
+    };
 }
 
 public sealed class DuplicateRequestException : InvalidOperationException

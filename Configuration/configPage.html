@@ -30,6 +30,10 @@
                         <input id="requestsEnableTvShows" type="checkbox">
                         <span>TV Shows</span>
                     </label>
+                    <label class="requests-media-option">
+                        <input id="requestsEnableMusic" type="checkbox">
+                        <span>Music (albums)</span>
+                    </label>
                 </div>
 
                 <h3 class="requests-config-section-title">Appearance</h3>
@@ -39,6 +43,20 @@
                         <input id="requestsEnableAnimations" type="checkbox">
                         <span>Animations</span>
                     </label>
+                </div>
+
+                <h3 class="requests-config-section-title">Trending</h3>
+                <p class="fieldDescription">Show this week's trending movies and TV shows on the Requests page while nothing is searched. Needs your own free TMDB API key (themoviedb.org → Settings → API); either the API key or the read access token works. The key stays on the server and is never shown to users. Trending is refreshed at most once an hour.</p>
+                <div class="requests-media-options">
+                    <label class="requests-media-option">
+                        <input id="requestsEnableTrending" type="checkbox">
+                        <span>Show trending</span>
+                    </label>
+                    <div class="requests-trending-key">
+                        <input id="requestsTmdbKey" type="password" autocomplete="off" spellcheck="false" placeholder="TMDB API key" aria-label="TMDB API key">
+                        <button id="requestsTmdbKeySave" type="button" is="emby-button" class="raised emby-button">Save key</button>
+                        <button id="requestsTmdbKeyRemove" type="button" is="emby-button" class="raised emby-button" hidden>Remove key</button>
+                    </div>
                 </div>
 
                 <h3 class="requests-config-section-title">Media Quality Options</h3>
@@ -63,7 +81,7 @@
                         <option value="">All statuses</option>
                     </select>
                     <select id="requestsAdminMediaType" aria-label="Media type filter">
-                        <option value="">All media types</option><option value="Movie">Movie</option><option value="TV Show">TV Show</option>
+                        <option value="">All media types</option><option value="Movie">Movie</option><option value="TV Show">TV Show</option><option value="Album">Album</option>
                     </select>
                     <select id="requestsAdminSort" aria-label="Sort by">
                         <option value="date">Sort: Request Date</option><option value="title">Sort: Title</option>
@@ -132,6 +150,9 @@
         .requestsConfigPage .requests-quality-row input { flex: 1; }
         .requestsConfigPage .requests-quality-row .requests-quality-name { flex: 1 1 8em; }
         .requestsConfigPage .requests-quality-row .requests-quality-description { flex: 2 1 12em; font-style: italic; }
+        .requestsConfigPage .requests-trending-key { display: flex; flex-wrap: wrap; gap: .5em; align-items: center; margin-top: .5em; }
+        .requestsConfigPage .requests-trending-key input { flex: 1 1 16em; background: #292929; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; color: inherit; font: inherit; padding: .5em .65em; }
+        .requestsConfigPage .requests-trending-key .emby-button { margin: 0; }
         .requestsConfigPage .requests-response-text { box-sizing: border-box; width: 100%; padding: .6em; border: 1px solid rgba(255,255,255,.15); border-radius: .2em; background: #292929; color: inherit; font: inherit; resize: vertical; }
         .requestsConfigPage .requests-response-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: .5em; margin-top: .5em; }
         .requestsConfigPage .requests-response-actions .emby-button { margin: 0; }

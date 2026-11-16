@@ -4,5 +4,6 @@ public enum MediaCategory
 {
     All,
     Movies,
-    TVShows
+    TVShows,
+    Music
 }
